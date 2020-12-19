@@ -2,7 +2,6 @@ using System.IO;
 using System.Threading.Tasks;
 using Android.Content;
 using Android.Graphics;
-using Android.Support.V4.Content;
 using Android.Text;
 using Android.Views;
 using Android.Widget;
@@ -10,6 +9,15 @@ using AView = Android.Views.View;
 using AColor = Android.Graphics.Color;
 using AColorDraw = Android.Graphics.Drawables.ColorDrawable;
 using Xamarin.Forms.Internals;
+#if __ANDROID_29__
+using AndroidX.Core.Widget;
+using AndroidX.Core.Content;
+#else
+using Android.Support.V4.Widget;
+using Android.Support.V4.Content;
+#endif
+using Android.OS;
+using System;
 
 namespace Xamarin.Forms.Platform.Android
 {
@@ -57,7 +65,7 @@ namespace Xamarin.Forms.Platform.Android
 			_mainText.SetSingleLine(true);
 			_mainText.Ellipsize = TextUtils.TruncateAt.End;
 			_mainText.SetPadding((int)context.ToPixels(15), padding, padding, padding);
-			_mainText.SetTextAppearanceCompat(context, global::Android.Resource.Style.TextAppearanceSmall);
+			TextViewCompat.SetTextAppearance(_mainText, global::Android.Resource.Style.TextAppearanceSmall);
 
 			using (var lp = new LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent))
 				textLayout.AddView(_mainText, lp);
@@ -67,7 +75,7 @@ namespace Xamarin.Forms.Platform.Android
 			_detailText.Ellipsize = TextUtils.TruncateAt.End;
 			_detailText.SetPadding((int)context.ToPixels(15), padding, padding, padding);
 			_detailText.Visibility = ViewStates.Gone;
-			_detailText.SetTextAppearanceCompat(context, global::Android.Resource.Style.TextAppearanceSmall);
+			TextViewCompat.SetTextAppearance(_detailText, global::Android.Resource.Style.TextAppearanceSmall);
 
 			using (var lp = new LayoutParams(ViewGroup.LayoutParams.MatchParent, ViewGroup.LayoutParams.WrapContent))
 				textLayout.AddView(_detailText, lp);
@@ -79,6 +87,12 @@ namespace Xamarin.Forms.Platform.Android
 
 			SetMinimumHeight((int)context.ToPixels(DefaultMinHeight));
 			_androidDefaultTextColor = Color.FromUint((uint)_mainText.CurrentTextColor);
+
+			if ((int)Forms.SdkInt > 16)
+			{
+				_mainText.TextAlignment = global::Android.Views.TextAlignment.ViewStart;
+				_detailText.TextAlignment = global::Android.Views.TextAlignment.ViewStart;
+			}
 		}
 
 		public AView AccessoryView { get; private set; }
@@ -179,43 +193,16 @@ namespace Xamarin.Forms.Platform.Android
 			LayoutParameters = new LayoutParams(ViewGroup.LayoutParams.MatchParent, (int)(height == -1 ? ViewGroup.LayoutParams.WrapContent : height));
 		}
 
-		protected override void OnDetachedFromWindow()
-		{
-			base.OnDetachedFromWindow();
-			_cell = null;
-		}
-
 		async void UpdateBitmap(ImageSource source, ImageSource previousSource = null)
 		{
-			if (Equals(source, previousSource))
-				return;
-
-			_imageView.SetImageResource(global::Android.Resource.Color.Transparent);
-
-			Bitmap bitmap = null;
-			IImageSourceHandler handler;
-
-			if (source != null && (handler = Registrar.Registered.GetHandler<IImageSourceHandler>(source.GetType())) != null)
+			try
 			{
-				try
-				{
-					bitmap = await handler.LoadImageAsync(source, Context);
-				}
-				catch (TaskCanceledException)
-				{
-				}
-				catch (IOException ex)
-				{
-					Log.Warning("Xamarin.Forms.Platform.Android.BaseCellView", "Error updating bitmap: {0}", ex);
-				}
+				await _imageView.UpdateBitmap(source, previousSource).ConfigureAwait(false);
 			}
-
-			if (bitmap == null && source is FileImageSource)
-				_imageView.SetImageResource(ResourceManager.GetDrawableByName(((FileImageSource)source).File));
-			else
-				_imageView.SetImageBitmap(bitmap);
-
-			bitmap?.Dispose();
+			catch (Exception ex)
+			{
+				Log.Warning(nameof(BaseCellView), "Error loading image: {0}", ex);
+			}
 		}
 	}
 }

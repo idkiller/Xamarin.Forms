@@ -1,5 +1,10 @@
 using System;
 using Android.Content;
+#if __ANDROID_29__
+using AndroidX.Core.Widget;
+#else
+using Android.Support.V4.Widget;
+#endif
 using Android.Text;
 using Android.Views;
 using Android.Views.InputMethods;
@@ -29,7 +34,7 @@ namespace Xamarin.Forms.Platform.Android
 			SetPadding((int)context.ToPixels(15), padding, padding, padding);
 
 			_label = new TextView(context);
-			_label.SetTextAppearanceCompat(context, global::Android.Resource.Style.TextAppearanceSmall);
+			TextViewCompat.SetTextAppearance(_label, global::Android.Resource.Style.TextAppearanceSmall);
 
 			var layoutParams = new LayoutParams(ViewGroup.LayoutParams.WrapContent, ViewGroup.LayoutParams.WrapContent) { Gravity = GravityFlags.CenterVertical };
 			using (layoutParams)
@@ -121,7 +126,7 @@ namespace Xamarin.Forms.Platform.Android
 				return;
 
 			_labelTextColor = color;
-			_label.SetTextColor(color.ToAndroid(defaultColorResourceId));
+			_label.SetTextColor(color.ToAndroid(defaultColorResourceId, _label.Context));
 		}
 
 		public void SetRenderHeight(double height)

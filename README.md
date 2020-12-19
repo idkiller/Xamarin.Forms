@@ -1,57 +1,112 @@
+
 <img src="banner.png" alt="Xamarin.Forms banner" height="145" >
+
 # Xamarin.Forms #
 
-Xamarin.Forms provides a way to quickly build native apps for iOS, Android, and Windows, completely in C#.
+Xamarin.Forms provides a way to quickly build native apps for iOS, Android, Windows and macOS, completely in C#.
 
 Read more about the platform at https://www.xamarin.com/forms.
 
 ## Build Status ##
 
-![alt text](https://img.shields.io/teamcity/https/teamcity.xamarin.com/e/XamarinForms_Debug_Cycle8ezTest_OsxDebug.svg?style=flat&label=OSX%20Debug%20%20%20%20%20 "OSX Debug")  
+![Azure DevOps](https://devdiv.visualstudio.com/DevDiv/_apis/build/status/Xamarin/XamarinForms/Xamarin%20Forms?branchName=master "Azure Pipelines")
 
-![alt text](https://img.shields.io/teamcity/https/teamcity.xamarin.com/e/XamarinForms_Debug_Cycle8ezTest_WindowsDebug.svg?style=flat&label=Win%20Debug%20%20%20%20%20%20 "Win Debug")  
+## Packages ##
 
-![alt text](https://img.shields.io/teamcity/https/teamcity.xamarin.com/e/XamarinForms_Debug_Cycle8ezTest_UiTests_OsxTestCloudPackageRunAndroid601.svg?style=flat&label=UITest%20Android "Android UI Tests")
+Platform/Feature               | Package name                              | Stable      | Prerelease | Nightly Feed [Azure](https://aka.ms/xf-ci/index.json)  (master branch)
+-----------------------|-------------------------------------------|-----------------------------|------------------------- |-------------------------|
+Core             | `Xamarin.Forms` | [![NuGet](https://img.shields.io/nuget/v/Xamarin.Forms.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms/) | [![NuGet](https://img.shields.io/nuget/vpre/Xamarin.Forms.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms/) |
+AppLinks  | `Xamarin.Forms.AppLinks`  | [![NuGet](https://img.shields.io/nuget/v/Xamarin.Forms.AppLinks.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.AppLinks/) | [![NuGet](https://img.shields.io/nuget/vpre/Xamarin.Forms.AppLinks.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.AppLinks/) | 
+Maps                 | `Xamarin.Forms.Maps`    | [![NuGet](https://img.shields.io/nuget/v/Xamarin.Forms.Maps.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Maps/) | [![NuGet](https://img.shields.io/nuget/vpre/Xamarin.Forms.Maps.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Maps/) |
+Maps.GTK             | `Xamarin.Forms.Maps.GTK` | [![NuGet](https://img.shields.io/nuget/v/Xamarin.Forms.Maps.GTK.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Maps.GTK/) | [![NuGet](https://img.shields.io/nuget/vpre/Xamarin.Forms.Maps.GTK.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Maps.GTK/) |
+Maps.WPF             | `Xamarin.Forms.Maps.WPF` | [![NuGet](https://img.shields.io/nuget/v/Xamarin.Forms.Maps.WPF.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Maps.WPF/) | [![NuGet](https://img.shields.io/nuget/vpre/Xamarin.Forms.Maps.WPF.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Maps.WPF/) |
+Pages  | `Xamarin.Forms.Pages`  | [![NuGet](https://img.shields.io/nuget/v/Xamarin.Forms.Pages.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Pages/) | [![NuGet](https://img.shields.io/nuget/vpre/Xamarin.Forms.Pages.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Pages/) |
+Pages.Azure  | `Xamarin.Forms.Pages.Azure`  | [![NuGet](https://img.shields.io/nuget/v/Xamarin.Forms.Pages.Azure.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Pages.Azure/) |[![NuGet](https://img.shields.io/nuget/vpre/Xamarin.Forms.Pages.Azure.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Pages.Azure/) |
+Platform.GTK  | `Xamarin.Forms.Platform.GTK`  | [![NuGet](https://img.shields.io/nuget/v/Xamarin.Forms.Platform.GTK.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Platform.GTK/) |[![NuGet](https://img.shields.io/nuget/vpre/Xamarin.Forms.Platform.GTK.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Platform.GTK/) |
+Platform.WPF  | `Xamarin.Forms.Platform.WPF`  | [![NuGet](https://img.shields.io/nuget/v/Xamarin.Forms.Platform.WPF.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Platform.WPF/) |[![NuGet](https://img.shields.io/nuget/vpre/Xamarin.Forms.Platform.WPF.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Platform.WPF/) |
+Visual.Material  | `Xamarin.Forms.Visual.Material`  | [![NuGet](https://img.shields.io/nuget/v/Xamarin.Forms.Visual.Material.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Visual.Material/) | [![NuGet](https://img.shields.io/nuget/vpre/Xamarin.Forms.Visual.Material.svg?style=flat-square&label=nuget)](https://www.nuget.org/packages/Xamarin.Forms.Visual.Material/) |
 
-![alt text](https://img.shields.io/teamcity/https/teamcity.xamarin.com/e/XamarinForms_Debug_Cycle8ezTest_UiTests_OsxTestCloudPackageRunIOSUnifiedIOS8.svg?style=flat&label=UITest%20iOS8%20%20%20%20 "iOS8 UI Tests")  
+If you want to use the latest dev build then you should read [this blog post](https://devblogs.microsoft.com/xamarin/try-the-latest-in-xamarin-forms-with-nightly-builds):
 
-![alt text](https://img.shields.io/teamcity/https/teamcity.xamarin.com/e/XamarinForms_Debug_Cycle8ezTest_UiTests_OsxTestCloudPackageRunIOSUnifiedIOS9.svg?style=flat&label=UITest%20iOS9%20%20%20%20 "iOS9 UI Tests")  
+- Add the nightly feed to your NuGet sources or add a NuGet.Config to your app (placing it in the same directory where your solution file is) with the following content:
 
-![alt text](https://img.shields.io/teamcity/https/teamcity.xamarin.com/e/XamarinForms_Debug_Cycle8ezTest_UiTests_OsxTestCloudPackageRunIOSUnifiedIOS10.svg?style=flat&label=UITest%20iOS10%20%20 "iOS10 UI Tests") 
+  ```xml
+  <?xml version="1.0" encoding="utf-8"?>
+  <configuration>
+    <packageSources>
+      <clear />
+      <add key="xamarin-ci" value="https://aka.ms/xf-ci/index.json" />
+      <add key="NuGet.org" value="https://api.nuget.org/v3/index.json" />
+    </packageSources>
+  </configuration>
+  ```
+
+  *NOTE: This NuGet.Config should be with your application unless you want nightly packages to potentially start being restored for other apps on the machine.*
+
+- Change your application's dependencies to have a `*` to get the latest version.
 
 ## Getting Started ##
 
-##### Install Visual Studio 2015 #####
-VS 2015 is required for developing Xamarin.Forms. If you do not already have it installed, you can download it [here](https://www.visualstudio.com/downloads/download-visual-studio-vs). VS 2015 Community is completely free. If you are installing VS 2015 for the first time, select the "Custom" installation type and select the following from the features list to install:
+### Windows ###
+##### Install Visual Studio 2019+ #####
 
-- C#/.NET (Xamarin v4.0.3)
-- Universal Windows App Development Tools
-- Windows 8.1 and Windows Phone 8.0/8.1 Tools
+VS 2019+ is required for developing Xamarin.Forms. If you do not already have it installed, you can download it [here](https://www.visualstudio.com/downloads/download-visual-studio-vs). VS 2019+ Community is completely free. If you are installing VS 2019+ for the first time, select the "Custom" installation type and select the following from the features list to install:
 
-We also recommend installing [Microsoft Visual Studio Emulator for Android](https://www.visualstudio.com/en-us/features/msft-android-emulator-vs.aspx) as well as [Emulators for Windows Phone 8.1](https://www.microsoft.com/en-us/download/details.aspx?id=44574). If you already have VS 2015 installed, you can verify that these features are installed by modifying the VS 2015 installation via the Control Panel.
+- .NET desktop development - In the `Individual Components > .NET > .NET Framework 4.6.1 SDK, .NET Framework 4.6.1 targeting pack, .NET Framework 4.7.2 SDK, .NET Framework 4.7.2 targeting pack`.
+- Universal Windows Platform Development  
+  - `Individual Components > SDKs, libraries, and frameworks > Windows 10 SDK (10.0.19041.0), Windows 10 SDK (10.0.18362.0), Windows 10 SDK (10.0.16299.0)`.
+  - Download and install 14393 from https://go.microsoft.com/fwlink/p/?LinkId=838916
+- Mobile Development with .NET 
+  - `Individual Components > Development Activities > Xamarin Remoted Simulator`
+  - If you're not using Hyper-V `Individual Components > Emulators > Hyper-V Intel Hardware Accelerated Execution Manager (HAXM)`
+- Most current SDK version of .NET Core
+  - Or install the most current .NET Core SDK from here https://dotnet.microsoft.com/download
 
-##### Install Additional Features #####
-After installing VS 2015, you will also need to install the following:
-  - Bing Maps SDK for Windows 8.1 Store apps -- you can find this in `Tools > Extensions and Updates` and searching for "bing" in the Online pane.
-  - Android SDKs -- you can install these via `Tools > Android > Android SDK Manager`.
+The Android 10.0 API 29 SDK and Android 9.0 API 28 SDK are required for developing Xamarin.Forms. They can be installed by using the [Xamarin Android SDK Manager](https://docs.microsoft.com/xamarin/android/get-started/installation/android-sdk).
+
+We also recommend installing [Xamarin Android Device Manager](https://developer.xamarin.com/guides/android/getting_started/installation/android-emulator/xamarin-device-manager/) This will use the HAXM tools installed above and allow you to configure Android Virtual Devices (AVDs) that emulate Android devices.
+If you already have VS 2019+ installed, you can verify that these features are installed by modifying the VS 2019+ installation via the Visual Studio Installer.
+
+##### Provisioning script
+If you are getting errors about missing SDks you can run our provisioning script in PowerShell or CMD
+
+- build.cmd -Target provision
+- ./build.ps1 -Target provision
+
+### Mac ###
+#### Install Visual Studio for Mac 2019 ####
+
+If you do not already have it installed, instructions to download and setup can be found [here](https://docs.microsoft.com/en-us/visualstudio/mac/installation?view=vsmac-2019).
+
+Because of current Multi-Targeting limitations with Visual Studio for Mac you will need to manually build/restore some projects before you are able to work on the Xamarin Forms solution.
+
+Here are a few different options we've put together to help make this process easier
+- Branches 3.5+ come with a Cake script target that you can use to build and open VSMac
+```sh
+./build.sh --target vsmac
+```
+- When working on an earlier branch that does not have the cake scripts then you can use the following [build.sh] script(https://gist.github.com/PureWeen/92c1e1aff0c257c3decf0bcb8d6e9296)
+
+- If you don't want to run any scripts then
+  - Open Xamarin.Forms.sln
+  - Wait for VSMAC to finish restoring all projects
+  - from the command line run:
+    - `msbuild Xamarin.Forms.Build.Tasks/Xamarin.Forms.Build.Tasks.csproj`
+  - Now you should be able to run and deploy everything. The only reason you would need to do this process again is if you clean the solution folder or delete the bin/obj folders that are part of the `Xamarin.Forms.Build.Tasks.csproj`
+
+If you are on Visual Studio for Mac 2017 you will need to turn off automatic package restore (Visual Studio => Preferences => Nuget => General => uncheck the Package Restore box) before working on the Xamarin.Forms solution. This step is no longer needed with Visual Studio for Mac 2019
 
 ##### Solution Configuration #####
+
 Upon opening the Xamarin.Forms solution, you will find that there are a number of errors and warnings under the Error List pane; you can resolve this by changing the filter of `Build + IntelliSense` to `Build Only`. At this point, you should be able to successfully build the solution.
 
 By default, the `Xamarin.Forms.Controls` project does not have a configuration for various API keys to access certain features on each platform (e.g. maps). When building the solution the first time, a `controlgallery.config` file will be generated inside that project, which looks like this:
 
-    Win8MapsAuthKey:
-    WinPhoneMapsAuthKey:
     UWPMapsAuthKey:
-    InsightsApiKey:
-    WP8AppId:
-    WP8AuthToken:
 
-You will have to obtain your own API keys for each of these services, inserted directly after the identifier (e.g. `Win8MapsAuthKey:abcdefghijklmnopqrstuvwxyz`). You can find out how to obtain each of these as follows:
+If you aren't working with maps, you can ignore this. If you want to work with maps, you will have to obtain your own API keys for each of these services, inserted directly after the identifier (e.g. `UWPMapsAuthKey:abcdefghijklmnopqrstuvwxyz`). You can find out how to obtain each of these as follows:
 
-- `Win8MapsAuthKey`, `WinPhoneMapsAuthKey`, and `UWPMapsAuthKey` at https://www.microsoft.com/maps/create-a-bing-maps-key.aspx
-- `InsightsApiKey` at https://insights.xamarin.com/
-- `WP8AppId` and `WP8AuthToken` at https://dev.windows.com/.
+- `UWPMapsAuthKey` at https://microsoft.com/maps/create-a-bing-maps-key.aspx
 
 Due to the way that Android works, the maps API key cannot be injected at runtime. As a result, you will have to add this key to the `MapsKey.cs` file under `Xamarin.Forms.ControlGallery.Android/Properties`:
 
@@ -59,23 +114,45 @@ Due to the way that Android works, the maps API key cannot be injected at runtim
 
 You can find out how to obtain a Google Maps API key [here](https://developer.xamarin.com/guides/android/platform_features/maps_and_location/maps/obtaining_a_google_maps_api_key/).
 
+##### Build from the Command line #####
+
+Make sure you have nuget.exe 4.0 or above and the latest dotnet core sdk (2.0.3). On macOS you should specify the platform in the msbuild command (`/p:Platform=iPhoneSimulator`)
+
+    msbuild /restore Xamarin.Forms.sln
+
+### UI Tests ###
+
+##### Run Android UI Tests #####
+
+Depending on your environment setup, you might need to configure a few things before being able to debug / run UI tests, especially on Windows.
+
+- If you receive an error about ANDROID_HOME, please make sure to set your environment variable to the Android SDK directory (e.g. C:\Program Files (x86)\Android\android-sdk).
+- If you receive an error about JAVA_HOME, please install the latest Java JDK and set your environment variable to the JDK directory (e.g. C:\Program Files\Java\jdk-13).
+- If you receive an error about a missing ApkFile, please generate an APK file for Xamarin.Forms.ControlGallery.Android. The easiest way to do this is to right click the project and select "Deploy". Note that if you rebuild the solution, you might lose the APK and will need to generate it again.
+
+After these steps are taken care of, you should be good to go. You can see all UI tests in Test Explorer, search them for your own convenience, and quickly run individual tests.
+
+##### Run UWP UI Tests #####
+
+To run the UWP UI Tests:
+
+1. Install and run the [Windows Application Driver](https://github.com/Microsoft/WinAppDriver#installing-and-running-windows-application-driver).
+2. Launch the `Xamarin.Forms.ControlGallery.WindowsUniversal` project to install the ControlGallery application onto your system.
+
+You should now be able to run any of the UWP UI Tests.
+
 ## Coding Style ##
 
-We follow the style used by the [.NET Foundation](https://github.com/dotnet/corefx/blob/master/Documentation/coding-guidelines/coding-style.md), with two primary exceptions:
+We follow the style used by the [.NET Foundation](https://github.com/dotnet/runtime/blob/master/docs/coding-guidelines/coding-style.md), with a few exceptions:
 
 - We do not use the `private` keyword as it is the default accessibility level in C#.
-- We use hard tabs over spaces. You can change this setting in VS 2015 via `Tools > Options` and navigating to `Text Editor > C#` and selecting the "Keep tabs" radio option.
+- We use hard tabs over spaces. You can change this setting in Visual Studio for Windows via `Tools > Options` and navigating to `Text Editor > C#` and selecting the "Keep tabs" radio option. In Visual Studio for Mac it's set via preferences in `Source Code > Code Formatting > C# source code` and disabling the checkbox for `Convert tabs to spaces`.
+- Lines should be limited to a max of 120 characters (or as close as possible within reason). This may be set in Visual Studio for Mac via preferences in `Source Code > Code Formatting > C# source code` and changing the `Desired file width` to `120`.
 
 ## Contributing ##
 
-- [How to Contribute](https://github.com/xamarin/xamarin.forms/wiki/Contributing-Code)
+- [How to Contribute](https://github.com/xamarin/Xamarin.Forms/blob/master/.github/CONTRIBUTING.md)
 
-### Xamarin.Forms Evolution
+### Reporting Bugs ###
 
-To discuss this project and participate in the design, we use the [Xamarin.Forms Evolution](https://forums.xamarin.com/categories/xamarin-forms-evolution) discussion board.   
-
-### Reporting Bugs
-
-We use [Bugzilla](https://bugzilla.xamarin.com/newbug) to track issues.
-
-
+We use [GitHub Issues](https://github.com/xamarin/Xamarin.Forms/issues) to track issues. If at all possible, please submit a [reproduction of your bug](https://gist.github.com/jassmith/92405c300e54a01dcc6d) along with your bug report.

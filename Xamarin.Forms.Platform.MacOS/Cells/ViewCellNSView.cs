@@ -41,8 +41,7 @@ namespace Xamarin.Forms.Platform.MacOS
 				IVisualElementRenderer renderer;
 				if (_rendererRef != null && _rendererRef.TryGetTarget(out renderer) && renderer.Element != null)
 				{
-					Platform.DisposeModelAndChildrenRenderers(renderer.Element);
-
+					renderer.Element.DisposeModalAndChildRenderers();
 					_rendererRef = null;
 				}
 			}
@@ -75,14 +74,12 @@ namespace Xamarin.Forms.Platform.MacOS
 
 		void UpdateCell(ViewCell cell)
 		{
-			ICellController cellController = _viewCell;
-			if (cellController != null)
-				Device.BeginInvokeOnMainThread(cellController.SendDisappearing);
+			if (_viewCell != null)
+				Device.BeginInvokeOnMainThread(_viewCell.SendDisappearing);
 
 			_viewCell = cell;
-			cellController = cell;
 
-			Device.BeginInvokeOnMainThread(cellController.SendAppearing);
+			Device.BeginInvokeOnMainThread(_viewCell.SendAppearing);
 
 			IVisualElementRenderer renderer;
 			if (_rendererRef == null || !_rendererRef.TryGetTarget(out renderer))
@@ -92,14 +89,16 @@ namespace Xamarin.Forms.Platform.MacOS
 				if (renderer.Element != null && renderer == Platform.GetRenderer(renderer.Element))
 					renderer.Element.ClearValue(Platform.RendererProperty);
 
-				var type = Internals.Registrar.Registered.GetHandlerType(_viewCell.View.GetType());
-				if (renderer.GetType() == type || (renderer is DefaultRenderer && type == null))
+				var type = Internals.Registrar.Registered.GetHandlerTypeForObject(_viewCell.View);
+				var reflectableType = renderer as System.Reflection.IReflectableType;
+				var rendererType = reflectableType != null ? reflectableType.GetTypeInfo().AsType() : renderer.GetType();
+				if (rendererType == type || (renderer is DefaultRenderer && type == null))
 					renderer.SetElement(_viewCell.View);
 				else
 				{
 					//when cells are getting reused the element could be already set to another cell
 					//so we should dispose based on the renderer and not the renderer.Element
-					Platform.DisposeRendererAndChildren(renderer);
+					renderer.Element.DisposeModalAndChildRenderers();
 					renderer = GetNewRenderer();
 				}
 			}

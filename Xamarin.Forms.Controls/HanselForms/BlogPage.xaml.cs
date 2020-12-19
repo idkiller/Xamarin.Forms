@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml.Linq;
@@ -67,7 +66,7 @@ namespace Xamarin.Forms.Controls
 			};
 			var share = new ToolbarItem
 			{
-				Icon = "ic_share.png",
+				IconImageSource = "ic_share.png",
 				Text = "Share",
 				//Command = new Command(() => CrossShare.Current
 				//  .Share("Be sure to read @shanselman's " + item.Title + " " + item.Link))
@@ -130,11 +129,12 @@ namespace Xamarin.Forms.Controls
 			try
 			{
 				var responseString = string.Empty;
-				using (var httpClient = new HttpClient())
-				{
-					var feed = "http://feeds.hanselman.com/ScottHanselman";
-					responseString = await httpClient.GetStringAsync(feed);
-				}
+				//TODO: get feed and 
+				//using (var httpClient = new HttpClient())
+				//{
+				//	var feed = "http://feeds.hanselman.com/ScottHanselman";
+				//	responseString = await httpClient.GetStringAsync(feed);
+				//}
 
 				FeedItems.Clear();
 				var items = await ParseFeed(responseString);

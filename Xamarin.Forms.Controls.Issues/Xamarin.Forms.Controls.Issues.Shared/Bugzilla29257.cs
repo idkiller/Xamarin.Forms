@@ -10,6 +10,10 @@ using NUnit.Framework;
 
 namespace Xamarin.Forms.Controls.Issues
 {
+	// Note that this test currently fails on UWP because of https://bugzilla.xamarin.com/show_bug.cgi?id=60478
+#if UITEST
+	[Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
 	[Preserve (AllMembers = true)]
 	[Issue (IssueTracker.Bugzilla, 29257, "CarouselPage.CurrentPage Does Not Work Properly When Used Inside a NavigationPage ")]
 	public class Bugzilla29257 : TestContentPage 

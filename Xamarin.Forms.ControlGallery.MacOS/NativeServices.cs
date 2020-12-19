@@ -1,13 +1,15 @@
 ﻿using System;
 using System.IO;
+using AppKit;
 using Xamarin.Forms;
 using Xamarin.Forms.ControlGallery.MacOS;
 using Xamarin.Forms.Controls;
 using Xamarin.Forms.Platform.MacOS;
+using IOPath = System.IO.Path;
 
 [assembly: Dependency(typeof(TestCloudService))]
-[assembly: Dependency(typeof(StringProvider))]
 [assembly: Dependency(typeof(CacheService))]
+[assembly: Dependency(typeof(NativeColorService))]
 [assembly: ExportRenderer(typeof(DisposePage), typeof(DisposePageRenderer))]
 [assembly: ExportRenderer(typeof(DisposeLabel), typeof(DisposeLabelRenderer))]
 
@@ -18,11 +20,22 @@ namespace Xamarin.Forms.ControlGallery.MacOS
 		public void ClearImageCache()
 		{
 			var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-			var cache = Path.Combine(documents, ".config", ".isolated-storage", "ImageLoaderCache");
+			var cache = IOPath.Combine(documents, ".config", ".isolated-storage", "ImageLoaderCache");
 			foreach (var file in Directory.GetFiles(cache))
 			{
 				File.Delete(file);
 			}
+		}
+	}
+
+	public class NativeColorService : INativeColorService
+	{
+		public Color GetConvertedColor(bool shouldCrash)
+		{
+			if (shouldCrash)
+				return NSColor.ControlText.ToColor();
+
+			return NSColor.ControlText.ToColor(NSColorSpace.DeviceRGBColorSpace);
 		}
 	}
 
@@ -49,14 +62,6 @@ namespace Xamarin.Forms.ControlGallery.MacOS
 				((DisposeLabel)Element).SendRendererDisposed();
 			}
 			base.Dispose(disposing);
-		}
-	}
-
-	public class StringProvider : IStringProvider
-	{
-		public string CoreGalleryTitle
-		{
-			get { return "iOS Core Gallery"; }
 		}
 	}
 

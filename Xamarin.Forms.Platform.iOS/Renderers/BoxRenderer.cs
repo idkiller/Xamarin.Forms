@@ -1,3 +1,4 @@
+using System;
 using System.ComponentModel;
 using UIKit;
 using RectangleF = CoreGraphics.CGRect;
@@ -9,14 +10,34 @@ namespace Xamarin.Forms.Platform.iOS
 	{
 		UIColor _colorToRenderer;
 		SizeF _previousSize;
+		nfloat _topLeft;
+		nfloat _topRight;
+		nfloat _bottomLeft;
+		nfloat _bottomRight;
+
+		const float PI = (float)Math.PI;
+		const float PIAndAHalf = PI * 1.5f;
+		const float HalfPI = PI * .5f;
+		const float TwoPI = PI * 2;
+
+		[Internals.Preserve(Conditional = true)]
+		public BoxRenderer()
+		{
+
+		}
 
 		public override void Draw(RectangleF rect)
 		{
-			using (var context = UIGraphics.GetCurrentContext())
-			{
-				_colorToRenderer.SetFill();
-				context.FillRect(rect);
-			}
+			UIBezierPath bezierPath = new UIBezierPath();
+
+			bezierPath.AddArc(new CoreGraphics.CGPoint(Bounds.X + Bounds.Width - _topRight, Bounds.Y + _topRight), _topRight, PIAndAHalf, TwoPI, true);
+			bezierPath.AddArc(new CoreGraphics.CGPoint(Bounds.X + Bounds.Width - _bottomRight, Bounds.Y + Bounds.Height - _bottomRight), _bottomRight, 0, HalfPI, true);
+			bezierPath.AddArc(new CoreGraphics.CGPoint(Bounds.X + _bottomLeft, Bounds.Y + Bounds.Height - _bottomLeft), _bottomLeft, HalfPI, PI, true);
+			bezierPath.AddArc(new CoreGraphics.CGPoint(Bounds.X + _topLeft, Bounds.Y + _topLeft), _topLeft, PI, PIAndAHalf, true);
+
+			_colorToRenderer.SetFill();
+			bezierPath.Fill();
+
 			base.Draw(rect);
 
 			_previousSize = Bounds.Size;
@@ -35,7 +56,10 @@ namespace Xamarin.Forms.Platform.iOS
 			base.OnElementChanged(e);
 
 			if (Element != null)
+			{
 				SetBackgroundColor(Element.BackgroundColor);
+				SetCornerRadius();
+			}
 		}
 
 		protected override void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -43,6 +67,8 @@ namespace Xamarin.Forms.Platform.iOS
 			base.OnElementPropertyChanged(sender, e);
 			if (e.PropertyName == BoxView.ColorProperty.PropertyName)
 				SetBackgroundColor(Element.BackgroundColor);
+			else if (e.PropertyName == BoxView.CornerRadiusProperty.PropertyName)
+				SetCornerRadius();
 			else if (e.PropertyName == VisualElement.IsVisibleProperty.PropertyName && Element.IsVisible)
 				SetNeedsDisplay();
 		}
@@ -57,6 +83,21 @@ namespace Xamarin.Forms.Platform.iOS
 				_colorToRenderer = elementColor.ToUIColor();
 			else
 				_colorToRenderer = color.ToUIColor();
+
+			SetNeedsDisplay();
+		}
+
+		void SetCornerRadius()
+		{
+			if (Element == null)
+				return;
+
+			var elementCornerRadius = Element.CornerRadius;
+
+			_topLeft = (nfloat)elementCornerRadius.TopLeft;
+			_topRight = (nfloat)elementCornerRadius.TopRight;
+			_bottomLeft = (nfloat)elementCornerRadius.BottomLeft;
+			_bottomRight = (nfloat)elementCornerRadius.BottomRight;
 
 			SetNeedsDisplay();
 		}

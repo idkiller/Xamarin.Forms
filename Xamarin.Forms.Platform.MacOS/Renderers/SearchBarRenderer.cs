@@ -71,7 +71,8 @@ namespace Xamarin.Forms.Platform.MacOS
 			}
 			else if (e.PropertyName == SearchBar.TextColorProperty.PropertyName)
 				UpdateTextColor();
-			else if (e.PropertyName == SearchBar.TextProperty.PropertyName)
+			else if (e.PropertyName == SearchBar.TextProperty.PropertyName ||
+				e.PropertyName == SearchBar.TextTransformProperty.PropertyName)
 				UpdateText();
 			else if (e.PropertyName == SearchBar.CancelButtonColorProperty.PropertyName)
 				UpdateCancelButton();
@@ -82,6 +83,8 @@ namespace Xamarin.Forms.Platform.MacOS
 			else if (e.PropertyName == SearchBar.FontSizeProperty.PropertyName)
 				UpdateFont();
 			else if (e.PropertyName == SearchBar.HorizontalTextAlignmentProperty.PropertyName)
+				UpdateAlignment();
+			else if (e.PropertyName == VisualElement.FlowDirectionProperty.PropertyName)
 				UpdateAlignment();
 		}
 
@@ -114,7 +117,7 @@ namespace Xamarin.Forms.Platform.MacOS
 
 		void OnSearchButtonClicked(object sender, EventArgs e)
 		{
-			((ISearchBarController)Element).OnSearchButtonPressed();
+			Element.OnSearchButtonPressed();
 			Control.ResignFirstResponder();
 		}
 
@@ -125,7 +128,7 @@ namespace Xamarin.Forms.Platform.MacOS
 
 		void UpdateAlignment()
 		{
-			Control.Alignment = Element.HorizontalTextAlignment.ToNativeTextAlignment();
+			Control.Alignment = Element.HorizontalTextAlignment.ToNativeTextAlignment(((IVisualElementController)Element).EffectiveFlowDirection);
 		}
 
 		void UpdateCancelButton()
@@ -164,7 +167,7 @@ namespace Xamarin.Forms.Platform.MacOS
 
 		void UpdateText()
 		{
-			Control.StringValue = Element.Text ?? "";
+			Control.StringValue = Element.UpdateFormsText(Element.Text, Element.TextTransform);
 			UpdateCancelButton();
 		}
 

@@ -3,6 +3,9 @@ using Xamarin.Forms.Internals;
 
 namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Bugzilla, 40073, "Toolbar items are not not functioning properly on UWP", PlatformAffected.WinRT)]
 	public class Bugzilla40073 : TestNavigationPage
@@ -27,7 +30,7 @@ namespace Xamarin.Forms.Controls.Issues
 
 			var thePage = new TabbedPage();
 			thePage.Children.Add(_theContent);
-			thePage.ToolbarItems.Add(new ToolbarItem() { Text = "Refresh", Icon = "coffee.png" });
+			thePage.ToolbarItems.Add(new ToolbarItem() { Text = "Refresh", IconImageSource = "coffee.png" });
 
 			PushAsync(thePage);
 		}

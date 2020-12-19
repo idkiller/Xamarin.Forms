@@ -7,17 +7,14 @@ using Xamarin.UITest;
 using NUnit.Framework;
 #endif
 
-// Apply the default category of "Issues" to all of the tests in this assembly
-// We use this as a catch-all for tests which haven't been individually categorized
-#if UITEST
-[assembly: NUnit.Framework.Category("Issues")]
-#endif
-
 namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Bugzilla, 32865, "On MasterDetailPage trying to change Icon of Master page doesn\'t work if another view is pushed and Image is renderer in blue", PlatformAffected.iOS)]
-	public class Bugzilla32865 : TestMasterDetailPage // or TestMasterDetailPage, etc ...
+	public class Bugzilla32865 : TestMasterDetailPage
 	{
 		public static Bugzilla32865 Mdp;
 
@@ -25,17 +22,17 @@ namespace Xamarin.Forms.Controls.Issues
 		{
 			Mdp = this;
 
-			Master = new ContentPage {Title = "Master"};
+			Master = new ContentPage { Title = "Master" };
 			Detail = new NavigationPage(new DetailView32865());
 		}
 
 		public void ChangeIcon()
 		{
-			Master.Icon = "settings";
+			Master.IconImageSource = "settings";
 		}
 		public void ChangeIcon2()
 		{
-			Master.Icon = "menuIcon";
+			Master.IconImageSource = "menuIcon";
 		}
 	}
 

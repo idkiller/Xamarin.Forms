@@ -2,13 +2,21 @@ using System;
 using System.ComponentModel;
 using System.Threading.Tasks;
 using Android.App;
+using Android.Content;
+#if __ANDROID_29__
+using AndroidX.Core.Widget;
+using AndroidX.DrawerLayout.Widget;
+#else
 using Android.Support.V4.Widget;
+#endif
 using Android.Views;
 using AView = Android.Views.View;
-using AColor = Android.Graphics.Drawables.ColorDrawable;
+using Android.OS;
+using Xamarin.Forms.Platform.Android.FastRenderers;
 
 namespace Xamarin.Forms.Platform.Android
 {
+
 	public class MasterDetailRenderer : DrawerLayout, IVisualElementRenderer, DrawerLayout.IDrawerListener
 	{
 		//from Android source code
@@ -19,12 +27,38 @@ namespace Xamarin.Forms.Platform.Android
 		MasterDetailContainer _masterLayout;
 		MasterDetailPage _page;
 		bool _presented;
+		Platform _platform;
 
+		string _defaultContentDescription;
+		string _defaultHint;
+
+		public MasterDetailRenderer(Context context) : base(context)
+		{
+		}
+
+		[Obsolete("This constructor is obsolete as of version 2.5. Please use MasterDetailRenderer(Context) instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public MasterDetailRenderer() : base(Forms.Context)
 		{
 		}
 
-		IMasterDetailPageController MasterDetailPageController => _page as IMasterDetailPageController;
+		Platform Platform
+		{
+			get
+			{
+				if (_platform == null)
+				{
+					if (Context is FormsApplicationActivity activity)
+					{
+						_platform = activity.Platform;
+					}
+				}
+
+				return _platform;
+			}
+		}
+
+		IMasterDetailPageController MasterDetailPageController => _page;
 
 		public bool Presented
 		{
@@ -73,6 +107,13 @@ namespace Xamarin.Forms.Platform.Android
 
 		public event EventHandler<VisualElementChangedEventArgs> ElementChanged;
 
+		event EventHandler<PropertyChangedEventArgs> ElementPropertyChanged;
+		event EventHandler<PropertyChangedEventArgs> IVisualElementRenderer.ElementPropertyChanged
+		{
+			add { ElementPropertyChanged += value; }
+			remove { ElementPropertyChanged -= value; }
+		}
+
 		public SizeRequest GetDesiredSize(int widthConstraint, int heightConstraint)
 		{
 			Measure(widthConstraint, heightConstraint);
@@ -95,9 +136,9 @@ namespace Xamarin.Forms.Platform.Android
 
 			AddView(_masterLayout);
 
-			var activity = Context as Activity;
-			activity.ActionBar.SetDisplayShowHomeEnabled(true);
-			activity.ActionBar.SetHomeButtonEnabled(true);
+			var activity = Context.GetActivity();
+			activity?.ActionBar?.SetDisplayShowHomeEnabled(true);
+			activity?.ActionBar?.SetHomeButtonEnabled(true);
 
 			UpdateBackgroundColor(_page);
 			UpdateBackgroundImage(_page);
@@ -131,8 +172,17 @@ namespace Xamarin.Forms.Platform.Android
 				element.SendViewInitialized(this);
 
 			if (element != null && !string.IsNullOrEmpty(element.AutomationId))
-				ContentDescription = element.AutomationId;
+				SetAutomationId(element.AutomationId);
+
+			SetContentDescription();
 		}
+
+		protected virtual void SetAutomationId(string id)
+		=> AutomationPropertiesProvider.SetAutomationId(this, Element, id);
+
+		protected virtual void SetContentDescription()
+			=> AutomationPropertiesProvider.SetContentDescription(this, Element, ref _defaultContentDescription, ref _defaultHint);
+
 
 		public VisualElementTracker Tracker { get; private set; }
 
@@ -142,10 +192,8 @@ namespace Xamarin.Forms.Platform.Android
 				Tracker.UpdateLayout();
 		}
 
-		public ViewGroup ViewGroup
-		{
-			get { return this; }
-		}
+		public ViewGroup ViewGroup => this;
+		AView IVisualElementRenderer.View => this;
 
 		protected override void Dispose(bool disposing)
 		{
@@ -165,6 +213,9 @@ namespace Xamarin.Forms.Platform.Android
 
 				if (_masterLayout != null)
 				{
+					if (_masterLayout.ChildView != null)
+						_masterLayout.ChildView.PropertyChanged -= HandleMasterPropertyChanged;
+
 					_masterLayout.Dispose();
 					_masterLayout = null;
 				}
@@ -231,18 +282,19 @@ namespace Xamarin.Forms.Platform.Android
 
 		void HandleMasterPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
-			if (e.PropertyName == Page.TitleProperty.PropertyName || e.PropertyName == Page.IconProperty.PropertyName)
-				((Platform)_page.Platform).UpdateMasterDetailToggle(true);
+			if (e.PropertyName == Page.TitleProperty.PropertyName || e.PropertyName == Page.IconImageSourceProperty.PropertyName)
+				Platform?.UpdateMasterDetailToggle(true);
 		}
 
 		void HandlePropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
+			ElementPropertyChanged?.Invoke(this, e);
 			if (e.PropertyName == "Master")
 				UpdateMaster();
 			else if (e.PropertyName == "Detail")
 			{
 				UpdateDetail();
-				((Platform)_page.Platform).UpdateActionBar();
+				Platform?.UpdateActionBar();
 			}
 			else if (e.PropertyName == MasterDetailPage.IsPresentedProperty.PropertyName)
 			{
@@ -252,7 +304,7 @@ namespace Xamarin.Forms.Platform.Android
 			}
 			else if (e.PropertyName == "IsGestureEnabled")
 				SetGestureState();
-			else if (e.PropertyName == Page.BackgroundImageProperty.PropertyName)
+			else if (e.PropertyName == Page.BackgroundImageSourceProperty.PropertyName)
 				UpdateBackgroundImage(_page);
 			if (e.PropertyName == VisualElement.BackgroundColorProperty.PropertyName)
 				UpdateBackgroundColor(_page);
@@ -287,9 +339,7 @@ namespace Xamarin.Forms.Platform.Android
 			SetDrawerLockMode(_page.IsGestureEnabled ? LockModeUnlocked : LockModeLockedClosed);
 		}
 
-		void IVisualElementRenderer.SetLabelFor(int? id)
-		{
-		}
+		void IVisualElementRenderer.SetLabelFor(int? id) => LabelFor = id ?? LabelFor;
 
 		void SetLockMode(int lockMode)
 		{
@@ -308,14 +358,28 @@ namespace Xamarin.Forms.Platform.Android
 
 		void UpdateBackgroundImage(Page view)
 		{
-			if (!string.IsNullOrEmpty(view.BackgroundImage))
-				this.SetBackground(Context.Resources.GetDrawable(view.BackgroundImage));
+			_ = this.ApplyDrawableAsync(view, Page.BackgroundImageSourceProperty, Context, drawable =>
+			{
+				this.SetBackground(drawable);
+			});
 		}
 
 		void UpdateDetail()
 		{
-			Context.HideKeyboard(this);
-			_detailLayout.ChildView = _page.Detail;
+			if (_detailLayout.ChildView == null)
+				Update();
+			else
+				// Queue up disposal of the previous renderers after the current layout updates have finished
+				new Handler(Looper.MainLooper).Post(Update);
+
+			void Update()
+			{
+				if (_detailLayout == null || _detailLayout.IsDisposed())
+					return;
+
+				Context.HideKeyboard(this);
+				_detailLayout.ChildView = _page.Detail;
+			}
 		}
 
 		void UpdateIsPresented()
@@ -328,25 +392,39 @@ namespace Xamarin.Forms.Platform.Android
 
 		void UpdateMaster()
 		{
-			if (_masterLayout != null && _masterLayout.ChildView != null)
-				_masterLayout.ChildView.PropertyChanged -= HandleMasterPropertyChanged;
-			_masterLayout.ChildView = _page.Master;
-			if (_page.Master != null)
-				_page.Master.PropertyChanged += HandleMasterPropertyChanged;
+			if (_masterLayout?.ChildView == null)
+				Update();
+			else
+				// Queue up disposal of the previous renderers after the current layout updates have finished
+				new Handler(Looper.MainLooper).Post(Update);
+
+			void Update()
+			{
+				if (_masterLayout == null || _masterLayout.IsDisposed())
+					return;
+
+				if (_masterLayout.ChildView != null)
+					_masterLayout.ChildView.PropertyChanged -= HandleMasterPropertyChanged;
+
+				_masterLayout.ChildView = _page.Master;
+
+				if (_masterLayout.ChildView != null)
+					_masterLayout.ChildView.PropertyChanged += HandleMasterPropertyChanged;
+			}
 		}
 
 		void UpdateSplitViewLayout()
 		{
 			if (Device.Idiom == TargetIdiom.Tablet)
 			{
-				bool isShowingSplit = MasterDetailPageController.ShouldShowSplitMode 
+				bool isShowingSplit = MasterDetailPageController.ShouldShowSplitMode
 					|| (MasterDetailPageController.ShouldShowSplitMode && _page.MasterBehavior != MasterBehavior.Default && _page.IsPresented);
 				SetLockMode(isShowingSplit ? LockModeLockedOpen : LockModeUnlocked);
 				unchecked
 				{
 					SetScrimColor(isShowingSplit ? Color.Transparent.ToAndroid() : (int)DefaultScrimColor);
 				}
-				((Platform)_page.Platform).UpdateMasterDetailToggle();
+				Platform?.UpdateMasterDetailToggle();
 			}
 		}
 	}

@@ -3,15 +3,18 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using Xamarin.Forms.Internals;
 
 namespace Xamarin.Forms
 {
 	internal sealed class ListProxy : IReadOnlyList<object>, IListProxy, INotifyCollectionChanged
 	{
+		IDispatcher _dispatcher;
 		readonly ICollection _collection;
 		readonly IList _list;
 		readonly int _windowSize;
+		readonly ConditionalWeakTable<ListProxy, WeakNotifyProxy> _sourceToWeakHandlers;
 
 		IEnumerator _enumerator;
 		int _enumeratorIndex;
@@ -24,12 +27,14 @@ namespace Xamarin.Forms
 
 		int _windowIndex;
 
-		internal ListProxy(IEnumerable enumerable, int windowSize = int.MaxValue)
+		internal ListProxy(IEnumerable enumerable, int windowSize = int.MaxValue, IDispatcher dispatcher = null)
 		{
+			_dispatcher = dispatcher;
 			_windowSize = windowSize;
 
 			ProxiedEnumerable = enumerable;
 			_collection = enumerable as ICollection;
+			_sourceToWeakHandlers = new ConditionalWeakTable<ListProxy, WeakNotifyProxy>();
 
 			if (_collection == null && enumerable is IReadOnlyCollection<object>)
 				_collection = new ReadOnlyListAdapter((IReadOnlyCollection<object>)enumerable);
@@ -40,7 +45,7 @@ namespace Xamarin.Forms
 
 			var changed = enumerable as INotifyCollectionChanged;
 			if (changed != null)
-				new WeakNotifyProxy(this, changed);
+				_sourceToWeakHandlers.Add(this, new WeakNotifyProxy(this, changed));
 		}
 
 		public IEnumerable ProxiedEnumerable { get; }
@@ -210,16 +215,13 @@ namespace Xamarin.Forms
 				sync.Callback(ProxiedEnumerable, sync.Context, () =>
 				{
 					e = e.WithCount(Count);
-					Device.BeginInvokeOnMainThread(action);
+					_dispatcher.Dispatch(action);
 				}, false);
 			}
 			else
 			{
 				e = e.WithCount(Count);
-				if (Device.IsInvokeRequired)
-					Device.BeginInvokeOnMainThread(action);
-				else
-					action();
+				_dispatcher.Dispatch(action);
 			}
 		}
 
@@ -362,10 +364,15 @@ namespace Xamarin.Forms
 		{
 			readonly WeakReference<INotifyCollectionChanged> _weakCollection;
 			readonly WeakReference<ListProxy> _weakProxy;
+			readonly ConditionalWeakTable<ListProxy, NotifyCollectionChangedEventHandler> _sourceToWeakHandlers;
 
 			public WeakNotifyProxy(ListProxy proxy, INotifyCollectionChanged incc)
 			{
-				incc.CollectionChanged += OnCollectionChanged;
+				_sourceToWeakHandlers = new ConditionalWeakTable<ListProxy, NotifyCollectionChangedEventHandler>();
+				NotifyCollectionChangedEventHandler handler = new NotifyCollectionChangedEventHandler(OnCollectionChanged);
+
+				_sourceToWeakHandlers.Add(proxy, handler);
+				incc.CollectionChanged += handler;
 
 				_weakProxy = new WeakReference<ListProxy>(proxy);
 				_weakCollection = new WeakReference<INotifyCollectionChanged>(incc);
@@ -427,6 +434,9 @@ namespace Xamarin.Forms
 		}
 
 		#region IList
+
+		bool IListProxy.TryGetValue(int index, out object value)
+			=> TryGetValue(index, out value);
 
 		object IList.this[int index]
 		{

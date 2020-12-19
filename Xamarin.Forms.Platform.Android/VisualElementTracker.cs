@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using Android.Content;
-using Android.OS;
 using Android.Views;
 using AView = Android.Views.View;
 using Object = Java.Lang.Object;
@@ -23,25 +22,30 @@ namespace Xamarin.Forms.Platform.Android
 		bool _initialUpdateNeeded = true;
 		bool _layoutNeeded;
 		IVisualElementRenderer _renderer;
-
+		AttachTracker _attachTracker;
 		public VisualElementTracker(IVisualElementRenderer renderer)
 		{
-			if (renderer == null)
-				throw new ArgumentNullException("renderer");
-
 			_batchCommittedHandler = HandleRedrawNeeded;
 			_propertyChangedHandler = HandlePropertyChanged;
 
-			_renderer = renderer;
-			_context = renderer.ViewGroup.Context;
+			_renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
+			_context = renderer.View.Context;
 			_renderer.ElementChanged += RendererOnElementChanged;
 
 			VisualElement view = renderer.Element;
 			SetElement(null, view);
 
-			renderer.ViewGroup.SetCameraDistance(3600);
+			renderer.View.SetCameraDistance(3600);
 
-			renderer.ViewGroup.AddOnAttachStateChangeListener(AttachTracker.Instance);
+			if(!_context.IsDesignerContext())
+			{
+				_attachTracker = AttachTracker.Instance;
+				renderer.View.AddOnAttachStateChangeListener(_attachTracker);
+			}
+			else
+			{
+				_attachTracker = new AttachTracker();
+			}
 		}
 
 		public void Dispose()
@@ -64,7 +68,13 @@ namespace Xamarin.Forms.Platform.Android
 				if (_renderer != null)
 				{
 					_renderer.ElementChanged -= RendererOnElementChanged;
-					_renderer.ViewGroup.RemoveOnAttachStateChangeListener(AttachTracker.Instance);
+
+					if (_renderer.View.IsAlive() && _attachTracker.IsAlive())
+					{
+						_renderer.View.RemoveOnAttachStateChangeListener(_attachTracker);
+						_attachTracker = null;
+					}
+
 					_renderer = null;
 					_context = null;
 				}
@@ -73,35 +83,45 @@ namespace Xamarin.Forms.Platform.Android
 
 		public void UpdateLayout()
 		{
-			Performance.Start();
+			Performance.Start(out string reference);
 
 			VisualElement view = _renderer.Element;
-			AView aview = _renderer.ViewGroup;
+			AView aview = _renderer.View;
 
-			var x = (int)_context.ToPixels(view.X);
-			var y = (int)_context.ToPixels(view.Y);
+			var headlessOffset = CompressedLayout.GetHeadlessOffset(view);
+			var x = (int)_context.ToPixels(view.X + headlessOffset.X);
+			var y = (int)_context.ToPixels(view.Y + headlessOffset.Y);
 			var width = Math.Max(0, (int)_context.ToPixels(view.Width));
 			var height = Math.Max(0, (int)_context.ToPixels(view.Height));
 
 			var formsViewGroup = aview as FormsViewGroup;
 			if (formsViewGroup == null)
 			{
-				Performance.Start("Measure");
+				Performance.Start(reference, "Measure");
 				aview.Measure(MeasureSpecFactory.MakeMeasureSpec(width, MeasureSpecMode.Exactly), MeasureSpecFactory.MakeMeasureSpec(height, MeasureSpecMode.Exactly));
-				Performance.Stop("Measure");
+				Performance.Stop(reference, "Measure");
 
-				Performance.Start("Layout");
+				Performance.Start(reference, "Layout");
 				aview.Layout(x, y, x + width, y + height);
-				Performance.Stop("Layout");
+				Performance.Stop(reference, "Layout");
 			}
 			else
 			{
-				Performance.Start("MeasureAndLayout");
+				Performance.Start(reference, "MeasureAndLayout");
 				formsViewGroup.MeasureAndLayout(MeasureSpecFactory.MakeMeasureSpec(width, MeasureSpecMode.Exactly), MeasureSpecFactory.MakeMeasureSpec(height, MeasureSpecMode.Exactly), x, y, x + width, y + height);
-				Performance.Stop("MeasureAndLayout");
+				Performance.Stop(reference, "MeasureAndLayout");
 			}
 
-			Performance.Stop();
+			// If we're running sufficiently new Android, we have to make sure to update the ClipBounds to
+			// match the new size of the ViewGroup
+			if ((int)Forms.SdkInt >= 18)
+			{
+				UpdateClipToBounds();
+			}
+
+			UpdateClip();
+
+			Performance.Stop(reference);
 
 			//On Width or Height changes, the anchors needs to be updated
 			UpdateAnchorX();
@@ -110,6 +130,11 @@ namespace Xamarin.Forms.Platform.Android
 
 		void HandlePropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
+			if (_renderer == null || !_renderer.View.IsAlive())
+			{
+				return;
+			}
+
 			if (e.PropertyName == Layout.IsClippedToBoundsProperty.PropertyName)
 			{
 				UpdateClipToBounds();
@@ -121,7 +146,7 @@ namespace Xamarin.Forms.Platform.Android
 				if (e.PropertyName == VisualElement.XProperty.PropertyName || e.PropertyName == VisualElement.YProperty.PropertyName || e.PropertyName == VisualElement.WidthProperty.PropertyName ||
 					e.PropertyName == VisualElement.HeightProperty.PropertyName)
 					_layoutNeeded = true;
-				else if (e.PropertyName == VisualElement.AnchorXProperty.PropertyName || e.PropertyName == VisualElement.AnchorYProperty.PropertyName || e.PropertyName == VisualElement.ScaleProperty.PropertyName ||
+				else if (e.PropertyName == VisualElement.AnchorXProperty.PropertyName || e.PropertyName == VisualElement.AnchorYProperty.PropertyName || e.PropertyName == VisualElement.ScaleProperty.PropertyName || e.PropertyName == VisualElement.ScaleXProperty.PropertyName || e.PropertyName == VisualElement.ScaleYProperty.PropertyName ||
 						 e.PropertyName == VisualElement.RotationProperty.PropertyName || e.PropertyName == VisualElement.RotationXProperty.PropertyName || e.PropertyName == VisualElement.RotationYProperty.PropertyName ||
 						 e.PropertyName == VisualElement.IsVisibleProperty.PropertyName || e.PropertyName == VisualElement.OpacityProperty.PropertyName ||
 						 e.PropertyName == VisualElement.TranslationXProperty.PropertyName || e.PropertyName == VisualElement.TranslationYProperty.PropertyName)
@@ -134,12 +159,14 @@ namespace Xamarin.Forms.Platform.Android
 
 			if (e.PropertyName == VisualElement.XProperty.PropertyName || e.PropertyName == VisualElement.YProperty.PropertyName || e.PropertyName == VisualElement.WidthProperty.PropertyName ||
 				e.PropertyName == VisualElement.HeightProperty.PropertyName)
-				MaybeRequestLayout();
+				_renderer.View.MaybeRequestLayout();
 			else if (e.PropertyName == VisualElement.AnchorXProperty.PropertyName)
 				UpdateAnchorX();
 			else if (e.PropertyName == VisualElement.AnchorYProperty.PropertyName)
 				UpdateAnchorY();
-			else if (e.PropertyName == VisualElement.ScaleProperty.PropertyName)
+			else if (e.PropertyName == VisualElement.ScaleProperty.PropertyName
+					 || e.PropertyName == VisualElement.ScaleXProperty.PropertyName
+					 || e.PropertyName == VisualElement.ScaleYProperty.PropertyName)
 				UpdateScale();
 			else if (e.PropertyName == VisualElement.RotationProperty.PropertyName)
 				UpdateRotation();
@@ -155,6 +182,10 @@ namespace Xamarin.Forms.Platform.Android
 				UpdateTranslationX();
 			else if (e.PropertyName == VisualElement.TranslationYProperty.PropertyName)
 				UpdateTranslationY();
+			else if (e.PropertyName == VisualElement.IsEnabledProperty.PropertyName)
+				UpdateIsEnabled();
+			else if (e.PropertyName == VisualElement.ClipProperty.PropertyName)
+				UpdateClip();
 		}
 
 		void HandleRedrawNeeded(object sender, EventArg<VisualElement> e)
@@ -164,7 +195,7 @@ namespace Xamarin.Forms.Platform.Android
 			_batchedProperties.Clear();
 
 			if (_layoutNeeded)
-				MaybeRequestLayout();
+				_renderer.View.MaybeRequestLayout();
 			_layoutNeeded = false;
 		}
 
@@ -177,16 +208,7 @@ namespace Xamarin.Forms.Platform.Android
 			}
 
 			UpdateClipToBounds();
-		}
-
-		void MaybeRequestLayout()
-		{
-			var isInLayout = false;
-			if ((int)Build.VERSION.SdkInt >= 18)
-				isInLayout = _renderer.ViewGroup.IsInLayout;
-
-			if (!isInLayout && !_renderer.ViewGroup.IsLayoutRequested)
-				_renderer.ViewGroup.RequestLayout();
+			UpdateClip();
 		}
 
 		void RendererOnElementChanged(object sender, VisualElementChangedEventArgs args)
@@ -208,11 +230,11 @@ namespace Xamarin.Forms.Platform.Android
 			{
 				newElement.BatchCommitted += _batchCommittedHandler;
 				newElement.PropertyChanged += _propertyChangedHandler;
-				_context = _renderer.ViewGroup.Context;
+				_context = _renderer.View.Context;
 
 				if (oldElement != null)
 				{
-					AView view = _renderer.ViewGroup;
+					AView view = _renderer.View;
 
 					// ReSharper disable CompareOfFloatsByEqualityOperator
 					if (oldElement.AnchorX != newElement.AnchorX)
@@ -231,7 +253,7 @@ namespace Xamarin.Forms.Platform.Android
 						UpdateRotationX();
 					if (oldElement.RotationY != newElement.RotationY)
 						UpdateRotationY();
-					if (oldElement.Scale != newElement.Scale)
+					if (oldElement.Scale != newElement.Scale || oldElement.ScaleX != newElement.ScaleX || oldElement.ScaleY != newElement.ScaleY)
 						UpdateScale();
 					// ReSharper restore CompareOfFloatsByEqualityOperator
 
@@ -243,7 +265,7 @@ namespace Xamarin.Forms.Platform.Android
 		void UpdateAnchorX()
 		{
 			VisualElement view = _renderer.Element;
-			AView aview = _renderer.ViewGroup;
+			AView aview = _renderer.View;
 
 			float currentPivot = aview.PivotX;
 			var target = (float)(view.AnchorX * _context.ToPixels(view.Width));
@@ -254,7 +276,7 @@ namespace Xamarin.Forms.Platform.Android
 		void UpdateAnchorY()
 		{
 			VisualElement view = _renderer.Element;
-			AView aview = _renderer.ViewGroup;
+			AView aview = _renderer.View;
 
 			float currentPivot = aview.PivotY;
 			var target = (float)(view.AnchorY * _context.ToPixels(view.Height));
@@ -264,25 +286,24 @@ namespace Xamarin.Forms.Platform.Android
 
 		void UpdateClipToBounds()
 		{
-			var layout = _renderer.Element as Layout;
-			var parent = _renderer.ViewGroup.Parent as ViewGroup;
-
-			if (parent == null || layout == null)
+			if (!(_renderer.Element is Layout layout))
+			{
 				return;
+			}
 
-			bool shouldClip = layout.IsClippedToBounds;
+			_renderer.View.SetClipToOutline(layout.IsClippedToBounds, _renderer.Element);
+		}
 
-			if ((int)Build.VERSION.SdkInt >= 18 && parent.ClipChildren == shouldClip)
-				return;
-
-			parent.SetClipChildren(shouldClip);
-			parent.Invalidate();
+		void UpdateClip()
+		{
+			var aView = _renderer.View;
+			aView?.Invalidate();
 		}
 
 		void UpdateIsVisible()
 		{
 			VisualElement view = _renderer.Element;
-			AView aview = _renderer.ViewGroup;
+			AView aview = _renderer.View;
 
 			if (view.IsVisible && aview.Visibility != ViewStates.Visible)
 				aview.Visibility = ViewStates.Visible;
@@ -292,55 +313,62 @@ namespace Xamarin.Forms.Platform.Android
 
 		void UpdateNativeView(object sender, EventArgs e)
 		{
-			Performance.Start();
+			Performance.Start(out string reference);
 
 			VisualElement view = _renderer.Element;
-			AView aview = _renderer.ViewGroup;
+			AView aview = _renderer.View;
 
-			if (aview is FormsViewGroup)
+			if (aview is FormsViewGroup formsViewGroup)
 			{
-				var formsViewGroup = (FormsViewGroup)aview;
-				formsViewGroup.SendBatchUpdate((float)(view.AnchorX * _context.ToPixels(view.Width)), (float)(view.AnchorY * _context.ToPixels(view.Height)),
-					(int)(view.IsVisible ? ViewStates.Visible : ViewStates.Invisible), view.IsEnabled, (float)view.Opacity, (float)view.Rotation, (float)view.RotationX, (float)view.RotationY, (float)view.Scale,
-					_context.ToPixels(view.TranslationX), _context.ToPixels(view.TranslationY));
+				formsViewGroup.SendBatchUpdate((float)(view.AnchorX * _context.ToPixels(view.Width)),
+											   (float)(view.AnchorY * _context.ToPixels(view.Height)),
+											   (int)(view.IsVisible ? ViewStates.Visible : ViewStates.Invisible),
+											   view.IsEnabled,
+											   (float)view.Opacity,
+											   (float)view.Rotation,
+											   (float)view.RotationX,
+											   (float)view.RotationY,
+											   (float)view.Scale * (float)view.ScaleX,
+											   (float)view.Scale * (float)view.ScaleY,
+											   _context.ToPixels(view.TranslationX),
+											   _context.ToPixels(view.TranslationY));
 			}
 			else
 			{
-				UpdateAnchorX();
-				UpdateAnchorY();
-				UpdateIsVisible();
-
-				if (view.IsEnabled != aview.Enabled)
-					aview.Enabled = view.IsEnabled;
-
-				UpdateOpacity();
-				UpdateRotation();
-				UpdateRotationX();
-				UpdateRotationY();
-				UpdateScale();
-				UpdateTranslationX();
-				UpdateTranslationY();
+				FormsViewGroup.SendViewBatchUpdate(aview,
+												   (float)(view.AnchorX * _context.ToPixels(view.Width)),
+												   (float)(view.AnchorY * _context.ToPixels(view.Height)),
+												   (int)(view.IsVisible ? ViewStates.Visible : ViewStates.Invisible),
+												   view.IsEnabled,
+												   (float)view.Opacity,
+												   (float)view.Rotation,
+												   (float)view.RotationX,
+												   (float)view.RotationY,
+												   (float)view.Scale * (float)view.ScaleX,
+												   (float)view.Scale * (float)view.ScaleY,
+												   _context.ToPixels(view.TranslationX),
+												   _context.ToPixels(view.TranslationY));
 			}
 
-			Performance.Stop();
+			Performance.Stop(reference);
 		}
 
 		void UpdateOpacity()
 		{
-			Performance.Start();
+			Performance.Start(out string reference);
 
 			VisualElement view = _renderer.Element;
-			AView aview = _renderer.ViewGroup;
+			AView aview = _renderer.View;
 
 			aview.Alpha = (float)view.Opacity;
 
-			Performance.Stop();
+			Performance.Stop(reference);
 		}
 
 		void UpdateRotation()
 		{
 			VisualElement view = _renderer.Element;
-			AView aview = _renderer.ViewGroup;
+			AView aview = _renderer.View;
 
 			aview.Rotation = (float)view.Rotation;
 		}
@@ -348,7 +376,7 @@ namespace Xamarin.Forms.Platform.Android
 		void UpdateRotationX()
 		{
 			VisualElement view = _renderer.Element;
-			AView aview = _renderer.ViewGroup;
+			AView aview = _renderer.View;
 
 			aview.RotationX = (float)view.RotationX;
 		}
@@ -356,7 +384,7 @@ namespace Xamarin.Forms.Platform.Android
 		void UpdateRotationY()
 		{
 			VisualElement view = _renderer.Element;
-			AView aview = _renderer.ViewGroup;
+			AView aview = _renderer.View;
 
 			aview.RotationY = (float)view.RotationY;
 		}
@@ -364,16 +392,16 @@ namespace Xamarin.Forms.Platform.Android
 		void UpdateScale()
 		{
 			VisualElement view = _renderer.Element;
-			AView aview = _renderer.ViewGroup;
+			AView aview = _renderer.View;
 
-			aview.ScaleX = (float)view.Scale;
-			aview.ScaleY = (float)view.Scale;
+			aview.ScaleX = (float)view.Scale * (float)view.ScaleX;
+			aview.ScaleY = (float)view.Scale * (float)view.ScaleY;
 		}
 
 		void UpdateTranslationX()
 		{
 			VisualElement view = _renderer.Element;
-			AView aview = _renderer.ViewGroup;
+			AView aview = _renderer.View;
 
 			aview.TranslationX = _context.ToPixels(view.TranslationX);
 		}
@@ -381,9 +409,14 @@ namespace Xamarin.Forms.Platform.Android
 		void UpdateTranslationY()
 		{
 			VisualElement view = _renderer.Element;
-			AView aview = _renderer.ViewGroup;
+			AView aview = _renderer.View;
 
 			aview.TranslationY = _context.ToPixels(view.TranslationY);
+		}
+
+		void UpdateIsEnabled()
+		{
+			_renderer.View.Enabled = _renderer.Element.IsEnabled;
 		}
 
 		class AttachTracker : Object, AView.IOnAttachStateChangeListener

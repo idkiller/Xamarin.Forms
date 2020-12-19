@@ -1,13 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
-
 using Xamarin.Forms;
 using Xamarin.Forms.CustomAttributes;
 using System.Windows.Input;
 using System.Diagnostics;
+
 using Xamarin.Forms.Internals;
 
 #if UITEST
+using Xamarin.Forms.Core.UITests;
 using NUnit.Framework;
 using Xamarin.UITest;
 using Xamarin.UITest.iOS;
@@ -15,6 +16,9 @@ using Xamarin.UITest.iOS;
 
 namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Github5000)]
+#endif
 	[Preserve (AllMembers = true)]
 	[Issue (IssueTracker.Github, 2289, "TextCell IsEnabled property not disabling element in TableView", PlatformAffected.iOS)]
 	public partial class Issue2289 : TestContentPage
@@ -61,7 +65,7 @@ namespace Xamarin.Forms.Controls.Issues
 			var disable1 = RunningApp.Query (c => c.Marked ("txtCellDisableContextActions1")) [0];
 			Assert.IsFalse (disable1.Enabled);
 
-			var screenBounds = RunningApp.Query (q => q.Raw ("* index:0")) [0].Rect;
+			var screenBounds = RunningApp.RootViewRect();
 
 			RunningApp.DragCoordinates (screenBounds.Width - 10, disable1.Rect.CenterY, 10, disable1.Rect.CenterY);
 
@@ -87,7 +91,7 @@ namespace Xamarin.Forms.Controls.Issues
 			var disable1 = RunningApp.Query (c => c.Marked ("txtCellEnabledContextActions1")) [0];
 			Assert.IsTrue (disable1.Enabled);
 
-			var screenBounds = RunningApp.Query (q => q.Raw ("* index:0")) [0].Rect;
+			var screenBounds = RunningApp.RootViewRect();
 
 			RunningApp.DragCoordinates (screenBounds.Width - 10, disable1.Rect.CenterY, 10, disable1.Rect.CenterY);
 

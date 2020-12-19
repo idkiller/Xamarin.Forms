@@ -9,9 +9,16 @@ namespace Xamarin.Forms.Platform.iOS
 {
 	public static class ToolbarItemExtensions
 	{
-		public static UIBarButtonItem ToUIBarButtonItem(this ToolbarItem item, bool forceName = false)
+		public static UIKit.UIBarButtonItem ToUIBarButtonItem(this Xamarin.Forms.ToolbarItem item, bool forceName)
 		{
-			return item.Order == ToolbarItemOrder.Secondary ? new SecondaryToolbarItem(item) : (UIBarButtonItem)new PrimaryToolbarItem(item, forceName);
+			return ToUIBarButtonItem(item, false, false);
+		}
+
+		public static UIBarButtonItem ToUIBarButtonItem(this ToolbarItem item, bool forceName = false, bool forcePrimary = false)
+		{
+			if (item.Order == ToolbarItemOrder.Secondary && !forcePrimary)
+				return new SecondaryToolbarItem(item);
+			return new PrimaryToolbarItem(item, forceName);
 		}
 
 		sealed class PrimaryToolbarItem : UIBarButtonItem
@@ -19,24 +26,25 @@ namespace Xamarin.Forms.Platform.iOS
 			readonly bool _forceName;
 			readonly ToolbarItem _item;
 
-			IMenuItemController Controller => _item;
-
 			public PrimaryToolbarItem(ToolbarItem item, bool forceName)
 			{
 				_forceName = forceName;
 				_item = item;
 
-				if (!string.IsNullOrEmpty(item.Icon) && !forceName)
+				if (item.IconImageSource != null && !item.IconImageSource.IsEmpty && !forceName)
 					UpdateIconAndStyle();
 				else
 					UpdateTextAndStyle();
 				UpdateIsEnabled();
 
-				Clicked += (sender, e) => Controller.Activate();
+				Clicked += (sender, e) => ((IMenuItemController)_item).Activate();
 				item.PropertyChanged += OnPropertyChanged;
 
 				if (item != null && !string.IsNullOrEmpty(item.AutomationId))
 					AccessibilityIdentifier = item.AutomationId;
+
+				this.SetAccessibilityHint(item);
+				this.SetAccessibilityLabel(item);
 			}
 
 			protected override void Dispose(bool disposing)
@@ -48,35 +56,38 @@ namespace Xamarin.Forms.Platform.iOS
 
 			void OnPropertyChanged(object sender, PropertyChangedEventArgs e)
 			{
-				if (e.PropertyName == Controller.IsEnabledPropertyName)
+				if (e.PropertyName == MenuItem.IsEnabledProperty.PropertyName)
 					UpdateIsEnabled();
 				else if (e.PropertyName == MenuItem.TextProperty.PropertyName)
 				{
-					if (string.IsNullOrEmpty(_item.Icon) || _forceName)
+					if (_item.IconImageSource == null || _item.IconImageSource.IsEmpty || _forceName)
 						UpdateTextAndStyle();
 				}
-				else if (e.PropertyName == MenuItem.IconProperty.PropertyName)
+				else if (e.PropertyName == MenuItem.IconImageSourceProperty.PropertyName)
 				{
 					if (!_forceName)
 					{
-						if (!string.IsNullOrEmpty(_item.Icon))
+						if (_item.IconImageSource != null && !_item.IconImageSource.IsEmpty)
 							UpdateIconAndStyle();
 						else
 							UpdateTextAndStyle();
 					}
 				}
+				else if (e.PropertyName == AutomationProperties.HelpTextProperty.PropertyName)
+					this.SetAccessibilityHint(_item);
+				else if (e.PropertyName == AutomationProperties.NameProperty.PropertyName)
+					this.SetAccessibilityLabel(_item);
 			}
 
-			void UpdateIconAndStyle()
+			async void UpdateIconAndStyle()
 			{
-				var image = UIImage.FromBundle(_item.Icon);
-				Image = image;
+				Image = await _item.IconImageSource.GetNativeImageAsync();
 				Style = UIBarButtonItemStyle.Plain;
 			}
 
 			void UpdateIsEnabled()
 			{
-				Enabled = Controller.IsEnabled;
+				Enabled = _item.IsEnabled;
 			}
 
 			void UpdateTextAndStyle()
@@ -90,7 +101,6 @@ namespace Xamarin.Forms.Platform.iOS
 		sealed class SecondaryToolbarItem : UIBarButtonItem
 		{
 			readonly ToolbarItem _item;
-			IMenuItemController Controller => _item;
 
 			public SecondaryToolbarItem(ToolbarItem item) : base(new SecondaryToolbarItemContent())
 			{
@@ -99,11 +109,14 @@ namespace Xamarin.Forms.Platform.iOS
 				UpdateIcon();
 				UpdateIsEnabled();
 
-				((SecondaryToolbarItemContent)CustomView).TouchUpInside += (sender, e) => Controller.Activate();
+				((SecondaryToolbarItemContent)CustomView).TouchUpInside += (sender, e) => ((IMenuItemController)_item).Activate();
 				item.PropertyChanged += OnPropertyChanged;
 
 				if (item != null && !string.IsNullOrEmpty(item.AutomationId))
 					AccessibilityIdentifier = item.AutomationId;
+
+				this.SetAccessibilityHint(item);
+				this.SetAccessibilityLabel(item);
 			}
 
 			protected override void Dispose(bool disposing)
@@ -117,20 +130,29 @@ namespace Xamarin.Forms.Platform.iOS
 			{
 				if (e.PropertyName == MenuItem.TextProperty.PropertyName)
 					UpdateText();
-				else if (e.PropertyName == MenuItem.IconProperty.PropertyName)
+				else if (e.PropertyName == MenuItem.IconImageSourceProperty.PropertyName)
 					UpdateIcon();
-				else if (e.PropertyName == Controller.IsEnabledPropertyName)
+				else if (e.PropertyName == MenuItem.IsEnabledProperty.PropertyName)
 					UpdateIsEnabled();
+				else if (e.PropertyName == AutomationProperties.HelpTextProperty.PropertyName)
+					this.SetAccessibilityHint(_item);
+				else if (e.PropertyName == AutomationProperties.NameProperty.PropertyName)
+					this.SetAccessibilityLabel(_item);
 			}
 
-			void UpdateIcon()
+			async void UpdateIcon()
 			{
-				((SecondaryToolbarItemContent)CustomView).Image = string.IsNullOrEmpty(_item.Icon) ? null : new UIImage(_item.Icon);
+				UIImage image = null;
+				if (_item.IconImageSource != null && !_item.IconImageSource.IsEmpty)
+				{
+					image = await _item.IconImageSource.GetNativeImageAsync();
+				}
+				((SecondaryToolbarItemContent)CustomView).Image = image;
 			}
 
 			void UpdateIsEnabled()
 			{
-				((UIControl)CustomView).Enabled = Controller.IsEnabled;
+				((UIControl)CustomView).Enabled = _item.IsEnabled;
 			}
 
 			void UpdateText()
@@ -143,7 +165,7 @@ namespace Xamarin.Forms.Platform.iOS
 				readonly UIImageView _imageView;
 				readonly UILabel _label;
 
-				public SecondaryToolbarItemContent() : base(new RectangleF(0, 0, 75, 20))
+				public SecondaryToolbarItemContent()
 				{
 					BackgroundColor = UIColor.Clear;
 					_imageView = new UIImageView { BackgroundColor = UIColor.Clear };

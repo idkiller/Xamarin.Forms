@@ -1,19 +1,37 @@
 using System;
 using System.ComponentModel;
+using Android.Content;
 using Android.Webkit;
-using Android.Widget;
+using Android.OS;
+using Xamarin.Forms.PlatformConfiguration.AndroidSpecific;
 using Xamarin.Forms.Internals;
+using MixedContentHandling = Android.Webkit.MixedContentHandling;
 using AWebView = Android.Webkit.WebView;
+using System.Threading.Tasks;
+using System.Net;
+using System.Collections.Generic;
 
 namespace Xamarin.Forms.Platform.Android
 {
 	public class WebViewRenderer : ViewRenderer<WebView, AWebView>, IWebViewDelegate
 	{
-		bool _ignoreSourceChanges;
+		public const string AssetBaseUrl = "file:///android_asset/";
+
+		WebNavigationEvent _eventState;
+		WebViewClient _webViewClient;
 		FormsWebChromeClient _webChromeClient;
+		bool _isDisposed = false;
+		protected internal IWebViewController ElementController => Element;
+		protected internal bool IgnoreSourceChanges { get; set; }
+		protected internal string UrlCanceled { get; set; }
 
-        IWebViewController ElementController => Element;
+		public WebViewRenderer(Context context) : base(context)
+		{
+			AutoPackage = false;			
+		}
 
+		[Obsolete("This constructor is obsolete as of version 2.5. Please use WebViewRenderer(Context) instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public WebViewRenderer()
 		{
 			AutoPackage = false;
@@ -21,31 +39,69 @@ namespace Xamarin.Forms.Platform.Android
 
 		public void LoadHtml(string html, string baseUrl)
 		{
-			Control.LoadDataWithBaseURL(baseUrl == null ? "file:///android_asset/" : baseUrl, html, "text/html", "UTF-8", null);
+			_eventState = WebNavigationEvent.NewPage;
+			Control.LoadDataWithBaseURL(baseUrl ?? AssetBaseUrl, html, "text/html", "UTF-8", null);
 		}
 
 		public void LoadUrl(string url)
 		{
-			Control.LoadUrl(url);
+			LoadUrl(url, true);
+		}
+
+		void LoadUrl(string url, bool fireNavigatingCanceled)
+		{
+			if (!fireNavigatingCanceled || !SendNavigatingCanceled(url))
+			{
+				_eventState = WebNavigationEvent.NewPage;
+				Control.LoadUrl(url);
+			}	
+		}
+
+		protected internal bool SendNavigatingCanceled(string url)
+		{
+			if (Element == null || string.IsNullOrWhiteSpace(url))
+				return true;
+
+			if (url == AssetBaseUrl)
+				return false;
+
+			var args = new WebNavigatingEventArgs(_eventState, new UrlWebViewSource { Url = url }, url);
+			SyncNativeCookies(url);
+			ElementController.SendNavigating(args);
+			UpdateCanGoBackForward();
+			UrlCanceled = args.Cancel ? null : url;
+			return args.Cancel;
 		}
 
 		protected override void Dispose(bool disposing)
 		{
+			if (_isDisposed)
+				return;
+
+			_isDisposed = true;
 			if (disposing)
 			{
 				if (Element != null)
 				{
-					if (Control != null)
-						Control.StopLoading();
+					Control?.StopLoading();
+
 					ElementController.EvalRequested -= OnEvalRequested;
 					ElementController.GoBackRequested -= OnGoBackRequested;
 					ElementController.GoForwardRequested -= OnGoForwardRequested;
+					ElementController.ReloadRequested -= OnReloadRequested;
+					ElementController.EvaluateJavaScriptRequested -= OnEvaluateJavaScriptRequested;
 
+					_webViewClient?.Dispose();
 					_webChromeClient?.Dispose();
 				}
 			}
 
 			base.Dispose(disposing);
+		}
+
+		protected virtual WebViewClient GetWebViewClient()
+		{
+			return new FormsWebViewClient(this);
 		}
 
 		protected virtual FormsWebChromeClient GetFormsWebChromeClient()
@@ -63,6 +119,11 @@ namespace Xamarin.Forms.Platform.Android
 			return new AWebView(Context);
 		}
 
+		internal WebNavigationEvent GetCurrentWebNavigationEvent()
+		{
+			return _eventState;
+		}
+
 		protected override void OnElementChanged(ElementChangedEventArgs<WebView> e)
 		{
 			base.OnElementChanged(e);
@@ -73,11 +134,19 @@ namespace Xamarin.Forms.Platform.Android
 #pragma warning disable 618 // This can probably be replaced with LinearLayout(LayoutParams.MatchParent, LayoutParams.MatchParent); just need to test that theory
 				webView.LayoutParameters = new global::Android.Widget.AbsoluteLayout.LayoutParams(LayoutParams.MatchParent, LayoutParams.MatchParent, 0, 0);
 #pragma warning restore 618
-				webView.SetWebViewClient(new WebClient(this));
+
+				_webViewClient = GetWebViewClient();
+				webView.SetWebViewClient(_webViewClient);
 
 				_webChromeClient = GetFormsWebChromeClient();
-				_webChromeClient.SetContext(Context as IStartActivityForResult);
+				_webChromeClient.SetContext(Context);
 				webView.SetWebChromeClient(_webChromeClient);
+
+				if(Context.IsDesignerContext())
+				{
+					SetNativeControl(webView);
+					return;
+				}
 
 				webView.Settings.JavaScriptEnabled = true;
 				webView.Settings.DomStorageEnabled = true;
@@ -88,16 +157,24 @@ namespace Xamarin.Forms.Platform.Android
 			{
 				var oldElementController = e.OldElement as IWebViewController;
 				oldElementController.EvalRequested -= OnEvalRequested;
+				oldElementController.EvaluateJavaScriptRequested -= OnEvaluateJavaScriptRequested;
 				oldElementController.GoBackRequested -= OnGoBackRequested;
 				oldElementController.GoForwardRequested -= OnGoForwardRequested;
+				oldElementController.ReloadRequested -= OnReloadRequested;
 			}
 
 			if (e.NewElement != null)
 			{
 				var newElementController = e.NewElement as IWebViewController;
 				newElementController.EvalRequested += OnEvalRequested;
+				newElementController.EvaluateJavaScriptRequested += OnEvaluateJavaScriptRequested;
 				newElementController.GoBackRequested += OnGoBackRequested;
 				newElementController.GoForwardRequested += OnGoForwardRequested;
+				newElementController.ReloadRequested += OnReloadRequested;
+
+				UpdateMixedContentMode();
+				UpdateEnableZoomControls();
+				UpdateDisplayZoomControls();
 			}
 
 			Load();
@@ -112,29 +189,175 @@ namespace Xamarin.Forms.Platform.Android
 				case "Source":
 					Load();
 					break;
+				case "MixedContentMode":
+					UpdateMixedContentMode();
+					break;
+				case "EnableZoomControls":
+					UpdateEnableZoomControls();
+					break;
+				case "DisplayZoomControls":
+					UpdateDisplayZoomControls();
+					break;
+			}
+		}
+
+		HashSet<string> _loadedCookies = new HashSet<string>();
+
+		Uri CreateUriForCookies(string url)
+		{
+			if (url == null)
+				return null;
+
+			Uri uri;
+
+			if (url.Length > 2000)
+				url = url.Substring(0, 2000);
+
+			if (Uri.TryCreate(url, UriKind.Absolute, out uri))
+			{
+				if (String.IsNullOrWhiteSpace(uri.Host))
+					return null;
+
+				return uri;
+			}
+
+			return null;
+		}
+
+		CookieCollection GetCookiesFromNativeStore(string url)
+		{
+			CookieContainer existingCookies = new CookieContainer();
+			var cookieManager = CookieManager.Instance;
+			var currentCookies = cookieManager.GetCookie(url);
+			var uri = CreateUriForCookies(url);
+
+			if (currentCookies != null)
+			{
+				foreach(var cookie in currentCookies.Split(';'))
+					existingCookies.SetCookies(uri, cookie);
+			}
+
+			return existingCookies.GetCookies(uri);
+		}
+
+		void InitialCookiePreloadIfNecessary(string url)
+		{
+			var myCookieJar = Element.Cookies;
+			if (myCookieJar == null)
+				return;
+
+			var uri = CreateUriForCookies(url);
+			if (uri == null)
+				return;
+
+			if (!_loadedCookies.Add(uri.Host))
+				return;
+
+			var cookies = myCookieJar.GetCookies(uri);
+
+			if (cookies != null)
+			{
+				var existingCookies = GetCookiesFromNativeStore(url);
+				foreach (Cookie cookie in existingCookies)
+				{
+					if (cookies[cookie.Name] == null)
+						myCookieJar.Add(cookie);
+				}
+			}
+		}
+
+		internal void SyncNativeCookiesToElement(string url)
+		{
+			var myCookieJar = Element.Cookies;
+			if (myCookieJar == null)
+				return;
+
+			var uri = CreateUriForCookies(url);
+			if (uri == null)
+				return;
+
+			var cookies = myCookieJar.GetCookies(uri);
+			var retrieveCurrentWebCookies = GetCookiesFromNativeStore(url);
+
+			foreach (Cookie cookie in cookies)
+			{
+				var nativeCookie = retrieveCurrentWebCookies[cookie.Name];
+				if (nativeCookie == null)
+					cookie.Expired = true;
+				else
+					cookie.Value = nativeCookie.Value;
+			}
+
+			SyncNativeCookies(url);
+		}
+
+		void SyncNativeCookies(string url)
+		{
+			var uri = CreateUriForCookies(url);
+			if (uri == null)
+				return;
+
+			var myCookieJar = Element.Cookies;
+			if (myCookieJar == null)
+				return;
+
+			InitialCookiePreloadIfNecessary(url);
+			var cookies = myCookieJar.GetCookies(uri);
+			if (cookies == null)
+				return;
+
+			var retrieveCurrentWebCookies = GetCookiesFromNativeStore(url);
+
+			var cookieManager = CookieManager.Instance;
+			cookieManager.SetAcceptCookie(true);
+			for (var i = 0; i < cookies.Count; i++)
+			{
+				var cookie = cookies[i];
+				var cookieString = cookie.ToString();
+				cookieManager.SetCookie(cookie.Domain, cookieString);
+			}
+
+			foreach (Cookie cookie in retrieveCurrentWebCookies)
+			{
+				if (cookies[cookie.Name] != null)
+					continue;
+
+				var cookieString = $"{cookie.Name}=; max-age=0;expires=Sun, 31 Dec 2017 00:00:00 UTC";
+				cookieManager.SetCookie(cookie.Domain, cookieString);
 			}
 		}
 
 		void Load()
 		{
-			if (_ignoreSourceChanges)
+			if (IgnoreSourceChanges)
 				return;
 
-			if (Element.Source != null)
-				Element.Source.Load(this);
+			Element.Source?.Load(this);
 
 			UpdateCanGoBackForward();
 		}
 
 		void OnEvalRequested(object sender, EvalRequested eventArg)
 		{
-			LoadUrl("javascript:" + eventArg.Script);
+			LoadUrl("javascript:" + eventArg.Script, false);
+		}
+
+		async Task<string> OnEvaluateJavaScriptRequested(string script)
+		{
+			var jsr = new JavascriptResult();
+
+			Control.EvaluateJavascript(script, jsr);
+
+			return await jsr.JsResult.ConfigureAwait(false);
 		}
 
 		void OnGoBackRequested(object sender, EventArgs eventArgs)
 		{
 			if (Control.CanGoBack())
+			{
+				_eventState = WebNavigationEvent.Back;
 				Control.GoBack();
+			}	
 
 			UpdateCanGoBackForward();
 		}
@@ -142,12 +365,22 @@ namespace Xamarin.Forms.Platform.Android
 		void OnGoForwardRequested(object sender, EventArgs eventArgs)
 		{
 			if (Control.CanGoForward())
+			{
+				_eventState = WebNavigationEvent.Forward;
 				Control.GoForward();
+			}	
 
 			UpdateCanGoBackForward();
 		}
 
-		void UpdateCanGoBackForward()
+		void OnReloadRequested(object sender, EventArgs eventArgs)
+		{
+			SyncNativeCookies(Control.Url?.ToString());
+			_eventState = WebNavigationEvent.Refresh;
+			Control.Reload();
+		}
+
+		protected internal void UpdateCanGoBackForward()
 		{
 			if (Element == null || Control == null)
 				return;
@@ -155,76 +388,40 @@ namespace Xamarin.Forms.Platform.Android
 			ElementController.CanGoForward = Control.CanGoForward();
 		}
 
-		class WebClient : WebViewClient
+		void UpdateMixedContentMode()
 		{
-			WebNavigationResult _navigationResult = WebNavigationResult.Success;
-			WebViewRenderer _renderer;
-
-			public WebClient(WebViewRenderer renderer)
+			if (Control != null && ((int)Forms.SdkInt >= 21))
 			{
-				if (renderer == null)
-					throw new ArgumentNullException("renderer");
-				_renderer = renderer;
+				Control.Settings.MixedContentMode = (MixedContentHandling)Element.OnThisPlatform().MixedContentMode();
+			}
+		}
+
+		void UpdateEnableZoomControls()
+		{
+			var value = Element.OnThisPlatform().ZoomControlsEnabled();
+			Control.Settings.SetSupportZoom(value);
+			Control.Settings.BuiltInZoomControls = value;
+		}
+
+		void UpdateDisplayZoomControls()
+		{
+			Control.Settings.DisplayZoomControls = Element.OnThisPlatform().ZoomControlsDisplayed();
+		}
+
+		class JavascriptResult : Java.Lang.Object, IValueCallback
+		{
+			TaskCompletionSource<string> source;
+			public Task<string> JsResult { get { return source.Task; } }
+
+			public JavascriptResult()
+			{
+				source = new TaskCompletionSource<string>();
 			}
 
-			public override void OnPageFinished(AWebView view, string url)
+			public void OnReceiveValue(Java.Lang.Object result)
 			{
-				if (_renderer.Element == null || url == "file:///android_asset/")
-					return;
-
-				var source = new UrlWebViewSource { Url = url };
-				_renderer._ignoreSourceChanges = true;
-				_renderer.ElementController.SetValueFromRenderer(WebView.SourceProperty, source);
-				_renderer._ignoreSourceChanges = false;
-
-				var args = new WebNavigatedEventArgs(WebNavigationEvent.NewPage, source, url, _navigationResult);
-
-				_renderer.ElementController.SendNavigated(args);
-
-				_renderer.UpdateCanGoBackForward();
-
-				base.OnPageFinished(view, url);
-			}
-
-			[Obsolete("This method was deprecated in API level 23.")]
-			public override void OnReceivedError(AWebView view, ClientError errorCode, string description, string failingUrl)
-			{
-				_navigationResult = WebNavigationResult.Failure;
-				if (errorCode == ClientError.Timeout)
-					_navigationResult = WebNavigationResult.Timeout;
-#pragma warning disable 618
-				base.OnReceivedError(view, errorCode, description, failingUrl);
-#pragma warning restore 618
-			}
-
-			public override void OnReceivedError(AWebView view, IWebResourceRequest request, WebResourceError error)
-			{
-				_navigationResult = WebNavigationResult.Failure;
-				if (error.ErrorCode == ClientError.Timeout)
-					_navigationResult = WebNavigationResult.Timeout;
-				base.OnReceivedError(view, request, error);
-			}
-
-			[Obsolete]
-			public override bool ShouldOverrideUrlLoading(AWebView view, string url)
-			{
-				if (_renderer.Element == null)
-					return true;
-
-				var args = new WebNavigatingEventArgs(WebNavigationEvent.NewPage, new UrlWebViewSource { Url = url }, url);
-
-				_renderer.ElementController.SendNavigating(args);
-				_navigationResult = WebNavigationResult.Success;
-
-				_renderer.UpdateCanGoBackForward();
-				return args.Cancel;
-			}
-
-			protected override void Dispose(bool disposing)
-			{
-				base.Dispose(disposing);
-				if (disposing)
-					_renderer = null;
+				string json = ((Java.Lang.String)result).ToString();
+				source.SetResult(json);
 			}
 		}
 	}

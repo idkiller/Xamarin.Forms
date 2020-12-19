@@ -51,11 +51,7 @@ namespace Xamarin.Forms.Platform.Android
 			_view = view;
 			Context = context;
 
-			Controller.ModelChanged += (sender, args) =>
-			{
-				InvalidateCellCache();
-				NotifyDataSetChanged();
-			};
+			Controller.ModelChanged += OnModelChanged;
 
 			listView.OnItemClickListener = this;
 			listView.OnItemLongClickListener = this;
@@ -221,13 +217,14 @@ namespace Xamarin.Forms.Platform.Android
 			for (var sectionIndex = 0; sectionIndex < sectionCount; sectionIndex++)
 			{
 				var sectionTitle = model.GetSectionTitle(sectionIndex);
+				var sectionTextColor = model.GetSectionTextColor(sectionIndex);
 				var sectionRowCount = model.GetRowCount(sectionIndex);
 
 				if (!string.IsNullOrEmpty(sectionTitle))
 				{
 					Cell headerCell = model.GetHeaderCell(sectionIndex);
 					if (headerCell == null)
-						headerCell = new TextCell { Text = sectionTitle };
+						headerCell = new TextCell { Text = sectionTitle, TextColor = sectionTextColor };
 					headerCell.Parent = _view;
 
 					newIsHeaderCache.Add(true);
@@ -255,10 +252,19 @@ namespace Xamarin.Forms.Platform.Android
 			_nextIsHeaderCache = null;
 		}
 
+		void OnModelChanged(object sender, EventArgs e)
+		{
+			InvalidateCellCache();
+			NotifyDataSetChanged();
+		}
+
 		protected override void Dispose(bool disposing)
 		{
 			if (disposing)
+			{
 				InvalidateCellCache();
+				Controller.ModelChanged -= OnModelChanged;
+			}
 
 			base.Dispose(disposing);
 		}

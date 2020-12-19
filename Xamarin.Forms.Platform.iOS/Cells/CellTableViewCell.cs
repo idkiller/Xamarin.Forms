@@ -7,7 +7,9 @@ namespace Xamarin.Forms.Platform.iOS
 	public class CellTableViewCell : UITableViewCell, INativeElementView
 	{
 		Cell _cell;
+
 		public Action<object, PropertyChangedEventArgs> PropertyChanged;
+
 		bool _disposed;
 
 		public CellTableViewCell(UITableViewCellStyle style, string key) : base(style, key)
@@ -22,32 +24,30 @@ namespace Xamarin.Forms.Platform.iOS
 				if (_cell == value)
 					return;
 
-				ICellController cellController = _cell;
-
-				if (cellController != null)
-					Device.BeginInvokeOnMainThread(cellController.SendDisappearing);
-
+				if (_cell != null)
+				{
+					_cell.PropertyChanged -= HandlePropertyChanged;
+					Device.BeginInvokeOnMainThread(_cell.SendDisappearing);
+				}
 				_cell = value;
-				cellController = value;
 
-				if (cellController != null)
-					Device.BeginInvokeOnMainThread(cellController.SendAppearing);
+				if (_cell != null)
+				{
+					_cell.PropertyChanged += HandlePropertyChanged;
+					Device.BeginInvokeOnMainThread(_cell.SendAppearing);
+				}
 			}
 		}
 
 		public Element Element => Cell;
 
-		public void HandlePropertyChanged(object sender, PropertyChangedEventArgs e)
-		{
-			if (PropertyChanged != null)
-				PropertyChanged(this, e);
-		}
+		public void HandlePropertyChanged(object sender, PropertyChangedEventArgs e) => PropertyChanged?.Invoke(sender, e);
 
 		internal static UITableViewCell GetNativeCell(UITableView tableView, Cell cell, bool recycleCells = false, string templateId = "")
 		{
 			var id = cell.GetType().FullName;
 
-			var renderer = (CellRenderer)Internals.Registrar.Registered.GetHandler<IRegisterable>(cell.GetType());
+			var renderer = (CellRenderer)Internals.Registrar.Registered.GetHandlerForObject<IRegisterable>(cell);
 
 			ContextActionsCell contextCell = null;
 			UITableViewCell reusableCell = null;
@@ -104,6 +104,12 @@ namespace Xamarin.Forms.Platform.iOS
 			if (disposing)
 			{
 				PropertyChanged = null;
+
+				if (_cell != null)
+				{
+					_cell.PropertyChanged -= HandlePropertyChanged;
+					CellRenderer.SetRealCell(_cell, null);
+				}
 				_cell = null;
 			}
 

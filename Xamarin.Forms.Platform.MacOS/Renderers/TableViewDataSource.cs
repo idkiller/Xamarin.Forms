@@ -11,16 +11,15 @@ namespace Xamarin.Forms.Platform.MacOS
 		const string HeaderIdentifier = nameof(TextCell);
 		const string ItemIdentifier = nameof(ViewCell);
 
-		protected ITableViewController Controller => _tableView;
-
-		readonly NSTableView _nsTableView;
-		readonly TableView _tableView;
+		NSTableView _nsTableView;
+		TableView _tableView;
+		bool _disposed;
 
 		public TableViewDataSource(TableViewRenderer tableViewRenderer)
 		{
 			_tableView = tableViewRenderer.Element;
 			_nsTableView = tableViewRenderer.TableView;
-			Controller.ModelChanged += (s, e) => { _nsTableView?.ReloadData(); };
+			_tableView.ModelChanged += (s, e) => { _nsTableView?.ReloadData(); };
 			AutomaticallyDeselect = true;
 		}
 
@@ -38,19 +37,19 @@ namespace Xamarin.Forms.Platform.MacOS
 
 			GetComputedIndexes(row, out sectionIndex, out itemIndexInSection, out isHeader);
 
-			var cell = Controller.Model.GetCell(sectionIndex, itemIndexInSection);
-			Controller.Model.RowSelected(cell);
+			var cell = _tableView.Model.GetCell(sectionIndex, itemIndexInSection);
+			_tableView.Model.RowSelected(cell);
 			if (AutomaticallyDeselect)
-				_nsTableView.DeselectRow(row);
+				_nsTableView?.DeselectRow(row);
 		}
 
 		public override nint GetRowCount(NSTableView tableView)
 		{
 			nint count = 0;
-			s_sectionCount = Controller.Model.GetSectionCount();
+			s_sectionCount = _tableView.Model.GetSectionCount();
 			for (int i = 0; i < s_sectionCount; i++)
 			{
-				count += Controller.Model.GetRowCount(i) + 1;
+				count += _tableView.Model.GetRowCount(i) + 1;
 			}
 
 			return count;
@@ -80,17 +79,31 @@ namespace Xamarin.Forms.Platform.MacOS
 			if (isHeader)
 			{
 				id = HeaderIdentifier;
-				cell = Controller.Model.GetHeaderCell(sectionIndex) ??
-						new TextCell { Text = Controller.Model.GetSectionTitle(sectionIndex) };
+				cell = _tableView.Model.GetHeaderCell(sectionIndex) ??
+						new TextCell { Text = _tableView.Model.GetSectionTitle(sectionIndex) };
 			}
 			else
 			{
 				id = ItemIdentifier;
-				cell = Controller.Model.GetCell(sectionIndex, itemIndexInSection);
+				cell = _tableView.Model.GetCell(sectionIndex, itemIndexInSection);
 			}
 
 			var nativeCell = CellNSView.GetNativeCell(tableView, cell, id, isHeader);
 			return nativeCell;
+		}
+
+		protected override void Dispose(bool disposing)
+		{
+			if(disposing)
+			{
+				if(!_disposed)
+				{
+					_nsTableView = null;
+					_tableView = null;
+					_disposed = true;
+				}
+			}
+			base.Dispose(disposing);
 		}
 
 		void GetComputedIndexes(nint row, out int sectionIndex, out int itemIndexInSection, out bool isHeader)
@@ -102,7 +115,7 @@ namespace Xamarin.Forms.Platform.MacOS
 
 			for (int i = 0; i < s_sectionCount; i++)
 			{
-				var groupCount = Controller.Model.GetRowCount(i);
+				var groupCount = _tableView.Model.GetRowCount(i);
 				var itemsInSection = groupCount + 1;
 
 				if (row < totalItems + itemsInSection)

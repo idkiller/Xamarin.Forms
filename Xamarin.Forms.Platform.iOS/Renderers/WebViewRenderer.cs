@@ -1,13 +1,19 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
+using System.Linq;
+using System.Net;
+using System.Threading.Tasks;
 using Foundation;
 using UIKit;
 using Xamarin.Forms.Internals;
+using Uri = System.Uri;
 
 namespace Xamarin.Forms.Platform.iOS
 {
-	public class WebViewRenderer : UIWebView, IVisualElementRenderer, IWebViewDelegate, IEffectControlProvider
+	[Obsolete("WebViewRenderer is obsolete as of 4.4.0. Please use the WkWebViewRenderer instead.")]
+	public class WebViewRenderer : UIWebView, IVisualElementRenderer, IWebViewDelegate, IEffectControlProvider, ITabStop
 	{
 		EventTracker _events;
 		bool _ignoreSourceChanges;
@@ -16,11 +22,13 @@ namespace Xamarin.Forms.Platform.iOS
 #pragma warning disable 0414
 		VisualElementTracker _tracker;
 #pragma warning restore 0414
+
+		[Internals.Preserve(Conditional = true)]
 		public WebViewRenderer() : base(RectangleF.Empty)
 		{
 		}
 
-		IWebViewController ElementController => Element as IWebViewController;
+		WebView WebView => Element as WebView;
 
 		public VisualElement Element { get; private set; }
 
@@ -36,9 +44,11 @@ namespace Xamarin.Forms.Platform.iOS
 			var oldElement = Element;
 			Element = element;
 			Element.PropertyChanged += HandlePropertyChanged;
-			ElementController.EvalRequested += OnEvalRequested;
-			ElementController.GoBackRequested += OnGoBackRequested;
-			ElementController.GoForwardRequested += OnGoForwardRequested;
+			WebView.EvalRequested += OnEvalRequested;
+			WebView.EvaluateJavaScriptRequested += OnEvaluateJavaScriptRequested;
+			WebView.GoBackRequested += OnGoBackRequested;
+			WebView.GoForwardRequested += OnGoForwardRequested;
+			WebView.ReloadRequested += OnReloadRequested;
 			Delegate = new CustomWebViewDelegate(this);
 
 			BackgroundColor = UIColor.Clear;
@@ -79,7 +89,10 @@ namespace Xamarin.Forms.Platform.iOS
 
 		public void LoadUrl(string url)
 		{
-			LoadRequest(new NSUrlRequest(new NSUrl(url)));
+			var uri = new Uri(url);
+			var safeHostUri = new Uri($"{uri.Scheme}://{uri.Authority}", UriKind.Absolute);
+			var safeRelativeUri = new Uri($"{uri.PathAndQuery}{uri.Fragment}", UriKind.Relative);
+			LoadRequest(new NSUrlRequest(new Uri(safeHostUri, safeRelativeUri)));
 		}
 
 		public override void LayoutSubviews()
@@ -98,9 +111,11 @@ namespace Xamarin.Forms.Platform.iOS
 					StopLoading();
 
 				Element.PropertyChanged -= HandlePropertyChanged;
-				ElementController.EvalRequested -= OnEvalRequested;
-				ElementController.GoBackRequested -= OnGoBackRequested;
-				ElementController.GoForwardRequested -= OnGoForwardRequested;
+				WebView.EvalRequested -= OnEvalRequested;
+				WebView.EvaluateJavaScriptRequested -= OnEvaluateJavaScriptRequested;
+				WebView.GoBackRequested -= OnGoBackRequested;
+				WebView.GoForwardRequested -= OnGoForwardRequested;
+				WebView.ReloadRequested -= OnReloadRequested;
 
 				_tracker?.Dispose();
 				_packager?.Dispose();
@@ -138,6 +153,16 @@ namespace Xamarin.Forms.Platform.iOS
 			EvaluateJavascript(eventArg.Script);
 		}
 
+		async Task<string> OnEvaluateJavaScriptRequested(string script)
+		{
+			var tcr = new TaskCompletionSource<string>();
+			var task = tcr.Task;
+
+			Device.BeginInvokeOnMainThread(() => { tcr.SetResult(EvaluateJavascript(script)); });
+
+			return await task.ConfigureAwait(false);
+		}
+
 		void OnGoBackRequested(object sender, EventArgs eventArgs)
 		{
 			if (CanGoBack)
@@ -160,10 +185,15 @@ namespace Xamarin.Forms.Platform.iOS
 			UpdateCanGoBackForward();
 		}
 
+		void OnReloadRequested(object sender, EventArgs eventArgs)
+		{
+			Reload();
+		}
+
 		void UpdateCanGoBackForward()
 		{
-			ElementController.CanGoBack = CanGoBack;
-			ElementController.CanGoForward = CanGoForward;
+			((IWebViewController)WebView).CanGoBack = CanGoBack;
+			((IWebViewController)WebView).CanGoForward = CanGoForward;
 		}
 
 		class CustomWebViewDelegate : UIWebViewDelegate
@@ -178,8 +208,6 @@ namespace Xamarin.Forms.Platform.iOS
 				_renderer = renderer;
 			}
 
-			IWebViewController WebViewController => WebView;
-
 			WebView WebView
 			{
 				get { return (WebView)_renderer.Element; }
@@ -188,7 +216,7 @@ namespace Xamarin.Forms.Platform.iOS
 			public override void LoadFailed(UIWebView webView, NSError error)
 			{
 				var url = GetCurrentUrl();
-				WebViewController.SendNavigated(new WebNavigatedEventArgs(_lastEvent, new UrlWebViewSource { Url = url }, url, WebNavigationResult.Failure));
+				WebView.SendNavigated(new WebNavigatedEventArgs(_lastEvent, new UrlWebViewSource { Url = url }, url, WebNavigationResult.Failure));
 
 				_renderer.UpdateCanGoBackForward();
 			}
@@ -198,13 +226,17 @@ namespace Xamarin.Forms.Platform.iOS
 				if (webView.IsLoading)
 					return;
 
-				_renderer._ignoreSourceChanges = true;
 				var url = GetCurrentUrl();
-				((IElementController)WebView).SetValueFromRenderer(WebView.SourceProperty, new UrlWebViewSource { Url = url });
+
+				if (url == $"file://{NSBundle.MainBundle.BundlePath}/")
+					return;
+
+				_renderer._ignoreSourceChanges = true;
+				WebView.SetValueFromRenderer(WebView.SourceProperty, new UrlWebViewSource { Url = url });
 				_renderer._ignoreSourceChanges = false;
 
 				var args = new WebNavigatedEventArgs(_lastEvent, WebView.Source, url, WebNavigationResult.Success);
-				WebViewController.SendNavigated(args);
+				WebView.SendNavigated(args);
 
 				_renderer.UpdateCanGoBackForward();
 			}
@@ -242,7 +274,35 @@ namespace Xamarin.Forms.Platform.iOS
 				var lastUrl = request.Url.ToString();
 				var args = new WebNavigatingEventArgs(navEvent, new UrlWebViewSource { Url = lastUrl }, lastUrl);
 
-				WebViewController.SendNavigating(args);
+				var jCookies = WebView.Cookies.GetCookies(request.Url);
+
+				if (jCookies != null)
+				{
+					// Set cookies here
+					var cookieJar = NSHttpCookieStorage.SharedStorage;
+					cookieJar.AcceptPolicy = NSHttpCookieAcceptPolicy.Always;
+
+					//clean up old cookies
+					foreach (var aCookie in cookieJar.Cookies)
+					{
+						cookieJar.DeleteCookie(aCookie);
+					}
+
+					//set up the new cookies
+					if (WebView.Cookies != null)
+					{
+						IList<NSHttpCookie> eCookies =
+							(from object jCookie in jCookies
+							 where jCookie != null
+							 select (Cookie)jCookie
+							 into netCookie
+							 select new NSHttpCookie(netCookie)).ToList();
+
+						cookieJar.SetCookies(eCookies.ToArray(), request.Url, request.Url);
+					}
+				}
+
+				WebView.SendNavigating(args);
 				_renderer.UpdateCanGoBackForward();
 				return !args.Cancel;
 			}
@@ -264,6 +324,8 @@ namespace Xamarin.Forms.Platform.iOS
 		{
 			get { return null; }
 		}
+
+		UIView ITabStop.TabStop => this;
 
 		#endregion
 

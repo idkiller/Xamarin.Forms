@@ -7,19 +7,33 @@ using System.Threading.Tasks;
 
 using Xamarin.Forms.CustomAttributes;
 using Xamarin.Forms.Internals;
+using Xamarin.Forms.PlatformConfiguration;
+using Xamarin.Forms.PlatformConfiguration.iOSSpecific;
 
-namespace Xamarin.Forms.Controls
+#if UITEST
+using NUnit.Framework;
+using Xamarin.Forms.Core.UITests;
+#endif
+
+namespace Xamarin.Forms.Controls.Issues
 {
-	[Preserve (AllMembers=true)]
-	[Issue (IssueTracker.Github, 1685, "Entry clears when upadting text from native with one-way binding", PlatformAffected.Android | PlatformAffected.iOS | PlatformAffected.WinPhone, NavigationBehavior.PushModalAsync)]
-	public class Issue1685 : ContentPage
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Github5000)]
+#endif
+	[Preserve(AllMembers = true)]
+	[Issue(IssueTracker.Github, 1685, "Entry clears when upadting text from native with one-way binding", PlatformAffected.Android | PlatformAffected.iOS | PlatformAffected.WinPhone, NavigationBehavior.PushModalAsync)]
+	public class Issue1685 : TestContentPage
 	{
+		const string ButtonId = "Button1685";
+		const string Success = "Success";
+
+		[Preserve(AllMembers = true)]
 		class Test : INotifyPropertyChanged
 		{
 			public event PropertyChangedEventHandler PropertyChanged;
 
-			decimal _entryValue = decimal.Zero;
-			public decimal EntryValue
+			string _entryValue = "0";
+			public string EntryValue
 			{
 				get
 				{
@@ -32,37 +46,39 @@ namespace Xamarin.Forms.Controls
 				}
 			}
 
-			void OnPropertyChanged(string caller) {
-				var handler = PropertyChanged;
-				if (handler != null) 
-				{
-					handler(this, new PropertyChangedEventArgs(caller));
-				}
+			void OnPropertyChanged(string caller)
+			{
+				PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(caller));
 			}
 		}
 
-		public Issue1685()
+		protected override void Init()
 		{
 			Title = "EntryBindingBug";
+			On<iOS>().SetUseSafeArea(true);
 
 			BindingContext = new Test();
 
-			var entry = new Entry() {
+			var entry = new Entry()
+			{
 				Placeholder = "Entry"
 			};
 			entry.SetBinding(Entry.TextProperty, "EntryValue", BindingMode.OneWay);
 
-			var button = new Button() {
-				Text = "Click me"
+			var button = new Button()
+			{
+				Text = "Click me",
+				AutomationId = ButtonId
 			};
 
-			button.Clicked += (sender, e) => 
+			button.Clicked += (sender, e) =>
 			{
 				var context = BindingContext as Test;
-				context.EntryValue = context.EntryValue + 1;
+				context.EntryValue = Success;
 			};
 
-			var root = new StackLayout() {
+			var root = new StackLayout()
+			{
 				VerticalOptions = LayoutOptions.FillAndExpand,
 				HorizontalOptions = LayoutOptions.FillAndExpand,
 				Children = {
@@ -74,5 +90,16 @@ namespace Xamarin.Forms.Controls
 			Content = root;
 
 		}
+
+#if UITEST
+		[Test]
+		[NUnit.Framework.Category(UITestCategories.Entry)]
+		public void EntryOneWayBindingShouldUpdate()
+		{
+			RunningApp.WaitForElement(ButtonId);
+			RunningApp.Tap(ButtonId);
+			RunningApp.WaitForElement(c => c.Text(Success));
+		}
+#endif
 	}
 }

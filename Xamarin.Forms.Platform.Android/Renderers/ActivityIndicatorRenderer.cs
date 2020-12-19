@@ -1,4 +1,6 @@
+using System;
 using System.ComponentModel;
+using Android.Content;
 using Android.Graphics;
 using Android.OS;
 using Android.Views;
@@ -8,6 +10,13 @@ namespace Xamarin.Forms.Platform.Android
 {
 	public class ActivityIndicatorRenderer : ViewRenderer<ActivityIndicator, AProgressBar>
 	{
+		public ActivityIndicatorRenderer(Context context) : base(context)
+		{
+			AutoPackage = false;
+		}
+
+		[Obsolete("This constructor is obsolete as of version 2.5. Please use ActivityIndicatorRenderer(Context) instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public ActivityIndicatorRenderer()
 		{
 			AutoPackage = false;
@@ -51,7 +60,7 @@ namespace Xamarin.Forms.Platform.Android
 			Color color = Element.Color;
 
 			if (!color.IsDefault)
-				Control.IndeterminateDrawable?.SetColorFilter(color.ToAndroid(), PorterDuff.Mode.SrcIn);
+				Control.IndeterminateDrawable?.SetColorFilter(color.ToAndroid(), FilterMode.SrcIn);
 			else
 				Control.IndeterminateDrawable?.ClearColorFilter();
 		}

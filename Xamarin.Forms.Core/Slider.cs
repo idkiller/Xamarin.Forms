@@ -1,11 +1,13 @@
 using System;
+using System.ComponentModel;
+using System.Windows.Input;
 using Xamarin.Forms.Internals;
 using Xamarin.Forms.Platform;
 
 namespace Xamarin.Forms
 {
 	[RenderWith(typeof(_SliderRenderer))]
-	public class Slider : View, IElementConfiguration<Slider>
+	public class Slider : View, ISliderController, IElementConfiguration<Slider>
 	{
 		public static readonly BindableProperty MinimumProperty = BindableProperty.Create("Minimum", typeof(double), typeof(Slider), 0d, validateValue: (bindable, value) =>
 		{
@@ -36,10 +38,24 @@ namespace Xamarin.Forms
 		}, propertyChanged: (bindable, oldValue, newValue) =>
 		{
 			var slider = (Slider)bindable;
-			EventHandler<ValueChangedEventArgs> eh = slider.ValueChanged;
-			if (eh != null)
-				eh(slider, new ValueChangedEventArgs((double)oldValue, (double)newValue));
+			slider.ValueChanged?.Invoke(slider, new ValueChangedEventArgs((double)oldValue, (double)newValue));
 		});
+
+		public static readonly BindableProperty MinimumTrackColorProperty = BindableProperty.Create(nameof(MinimumTrackColor), typeof(Color), typeof(Slider), Color.Default);
+
+		public static readonly BindableProperty MaximumTrackColorProperty = BindableProperty.Create(nameof(MaximumTrackColor), typeof(Color), typeof(Slider), Color.Default);
+
+		public static readonly BindableProperty ThumbColorProperty = BindableProperty.Create(nameof(ThumbColor), typeof(Color), typeof(Slider), Color.Default);
+
+		public static readonly BindableProperty ThumbImageSourceProperty = BindableProperty.Create(nameof(ThumbImageSource), typeof(ImageSource), typeof(Slider), default(ImageSource));
+
+		[Obsolete("ThumbImageProperty is obsolete as of 4.0.0. Please use ThumbImageSourceProperty instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public static readonly BindableProperty ThumbImageProperty = ThumbImageSourceProperty;
+
+		public static readonly BindableProperty DragStartedCommandProperty = BindableProperty.Create(nameof(DragStartedCommand), typeof(ICommand), typeof(Slider), default(ICommand));
+
+		public static readonly BindableProperty DragCompletedCommandProperty = BindableProperty.Create(nameof(DragCompletedCommand), typeof(ICommand), typeof(Slider), default(ICommand));
 
 		readonly Lazy<PlatformConfigurationRegistry<Slider>> _platformConfigurationRegistry;
 
@@ -66,6 +82,50 @@ namespace Xamarin.Forms
 			Value = val.Clamp(min, max);
 		}
 
+		public Color MinimumTrackColor
+		{
+			get { return (Color)GetValue(MinimumTrackColorProperty); }
+			set { SetValue(MinimumTrackColorProperty, value); }
+		}
+
+		public Color MaximumTrackColor
+		{
+			get { return (Color)GetValue(MaximumTrackColorProperty); }
+			set { SetValue(MaximumTrackColorProperty, value); }
+		}
+
+		public Color ThumbColor
+		{
+			get { return (Color)GetValue(ThumbColorProperty); }
+			set { SetValue(ThumbColorProperty, value); }
+		}
+
+		public ImageSource ThumbImageSource
+		{
+			get { return (ImageSource)GetValue(ThumbImageSourceProperty); }
+			set { SetValue(ThumbImageSourceProperty, value); }
+		}
+
+		[Obsolete("ThumbImage is obsolete as of 4.0.0. Please use ThumbImageSource instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public FileImageSource ThumbImage
+		{
+			get { return GetValue(ThumbImageProperty) as FileImageSource; }
+			set { SetValue(ThumbImageProperty, value); }
+		}
+
+		public ICommand DragStartedCommand
+		{
+			get { return (ICommand)GetValue(DragStartedCommandProperty); }
+			set { SetValue(DragStartedCommandProperty, value); }
+		}
+
+		public ICommand DragCompletedCommand
+		{
+			get { return (ICommand)GetValue(DragCompletedCommandProperty); }
+			set { SetValue(DragCompletedCommandProperty, value); }
+		}
+
 		public double Maximum
 		{
 			get { return (double)GetValue(MaximumProperty); }
@@ -85,6 +145,26 @@ namespace Xamarin.Forms
 		}
 
 		public event EventHandler<ValueChangedEventArgs> ValueChanged;
+		public event EventHandler DragStarted;
+		public event EventHandler DragCompleted;
+
+		void ISliderController.SendDragStarted()
+		{
+			if (IsEnabled)
+			{
+				DragStartedCommand?.Execute(null);
+				DragStarted?.Invoke(this, null);
+			}
+		}
+
+		void ISliderController.SendDragCompleted()
+		{
+			if (IsEnabled)
+			{
+				DragCompletedCommand?.Execute(null);
+				DragCompleted?.Invoke(this, null);
+			}
+		}
 
 		public IPlatformElementConfiguration<T, Slider> On<T>() where T : IConfigPlatform
 		{

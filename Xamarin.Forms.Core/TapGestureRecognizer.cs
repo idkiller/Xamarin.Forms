@@ -57,7 +57,8 @@ namespace Xamarin.Forms
 		#region obsolete cruft
 
 		// call empty constructor to hack around bug in mono where compiler generates invalid IL
-		[Obsolete("Obsolete in 1.0.2. Use Command instead")]
+		[Obsolete("TapGestureRecognizer(Action<View, object> tappedCallback) is obsolete as of version 1.0.2. Please use Command instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public TapGestureRecognizer(Action<View, object> tappedCallback) : this()
 		{
 			if (tappedCallback == null)
@@ -66,7 +67,8 @@ namespace Xamarin.Forms
 		}
 
 		// call empty constructor to hack around bug in mono where compiler generates invalid IL
-		[Obsolete("Obsolete in 1.0.2. Use Command instead")]
+		[Obsolete("TapGestureRecognizer(Action<View> tappedCallback) is obsolete as of version 1.0.2. Please use Command instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public TapGestureRecognizer(Action<View> tappedCallback) : this()
 		{
 			if (tappedCallback == null)
@@ -74,20 +76,24 @@ namespace Xamarin.Forms
 			TappedCallback = (s, o) => tappedCallback(s);
 		}
 
-		[Obsolete("Obsolete in 1.0.2. Use Command instead")] public static readonly BindableProperty TappedCallbackProperty = BindableProperty.Create("TappedCallback", typeof(Action<View, object>),
-			typeof(TapGestureRecognizer), null);
+		[Obsolete("TappedCallbackProperty is obsolete as of version 1.0.2. Please use Command instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public static readonly BindableProperty TappedCallbackProperty = BindableProperty.Create("TappedCallback", typeof(Action<View, object>), typeof(TapGestureRecognizer), null);
 
-		[Obsolete("Obsolete in 1.0.2. Use Command instead")]
+		[Obsolete("TappedCallback is obsolete as of version 1.0.2. Please use Command instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public Action<View, object> TappedCallback
 		{
 			get { return (Action<View, object>)GetValue(TappedCallbackProperty); }
 			set { SetValue(TappedCallbackProperty, value); }
 		}
 
-		[Obsolete("Obsolete in 1.0.2. Use Command instead")] public static readonly BindableProperty TappedCallbackParameterProperty = BindableProperty.Create("TappedCallbackParameter", typeof(object),
-			typeof(TapGestureRecognizer), null);
+		[Obsolete("TappedCallbackParameterProperty is obsolete as of version 1.0.2. Please use Command instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public static readonly BindableProperty TappedCallbackParameterProperty = BindableProperty.Create("TappedCallbackParameter", typeof(object), typeof(TapGestureRecognizer), null);
 
-		[Obsolete("Obsolete in 1.0.2. Use Command instead")]
+		[Obsolete("TappedCallbackParameter is obsolete as of version 1.0.2. Please use Command instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public object TappedCallbackParameter
 		{
 			get { return GetValue(TappedCallbackParameterProperty); }

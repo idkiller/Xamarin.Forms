@@ -1,27 +1,28 @@
 ﻿using System.Reflection;
-using System.Runtime.InteropServices;
 using Xamarin.Forms;
 using Xamarin.Forms.Platform.UWP;
+using Xamarin.Forms.Shapes;
+using Rectangle = Xamarin.Forms.Shapes.Rectangle;
 
-[assembly: AssemblyTitle("Xamarin.Forms.Platform.UAP")]
-[assembly: AssemblyDescription("")]
-[assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCulture("")]
-[assembly: ComVisible(false)]
 [assembly: Dependency(typeof(WindowsSerializer))]
 
 // Views
 
 [assembly: ExportRenderer(typeof(Layout), typeof(LayoutRenderer))]
-[assembly: ExportRenderer(typeof(BoxView), typeof(BoxViewRenderer))]
+[assembly: ExportRenderer(typeof(BoxView), typeof(BoxViewBorderRenderer))]
 [assembly: ExportRenderer(typeof(Image), typeof(ImageRenderer))]
+[assembly: ExportRenderer(typeof(ImageButton), typeof(ImageButtonRenderer))]
 [assembly: ExportRenderer(typeof(Label), typeof(LabelRenderer))]
 [assembly: ExportRenderer(typeof(Button), typeof(ButtonRenderer))]
+[assembly: ExportRenderer(typeof(RadioButton), typeof(RadioButtonRenderer))]
 [assembly: ExportRenderer(typeof(ListView), typeof(ListViewRenderer))]
+[assembly: ExportRenderer(typeof(CarouselView), typeof(CarouselViewRenderer))]
+[assembly: ExportRenderer(typeof(CollectionView), typeof(CollectionViewRenderer))]
 [assembly: ExportRenderer(typeof(ScrollView), typeof(ScrollViewRenderer))]
 [assembly: ExportRenderer(typeof(ProgressBar), typeof(ProgressBarRenderer))]
 [assembly: ExportRenderer(typeof(Slider), typeof(SliderRenderer))]
 [assembly: ExportRenderer(typeof(Switch), typeof(SwitchRenderer))]
+[assembly: ExportRenderer(typeof(SwipeView), typeof(SwipeViewRenderer))]
 [assembly: ExportRenderer(typeof(WebView), typeof(WebViewRenderer))]
 [assembly: ExportRenderer(typeof(Frame), typeof(FrameRenderer))]
 [assembly: ExportRenderer(typeof(ActivityIndicator), typeof(ActivityIndicatorRenderer))]
@@ -31,14 +32,26 @@ using Xamarin.Forms.Platform.UWP;
 [assembly: ExportRenderer(typeof(DatePicker), typeof(DatePickerRenderer))]
 [assembly: ExportRenderer(typeof(Stepper), typeof(StepperRenderer))]
 [assembly: ExportRenderer(typeof(Entry), typeof(EntryRenderer))]
+[assembly: ExportRenderer(typeof(CheckBox), typeof(CheckBoxRenderer))]
 [assembly: ExportRenderer(typeof(TableView), typeof(TableViewRenderer))]
 [assembly: ExportRenderer(typeof(NativeViewWrapper), typeof(NativeViewWrapperRenderer))]
+[assembly: ExportRenderer(typeof(MediaElement), typeof(MediaElementRenderer))]
+[assembly: ExportRenderer(typeof(RefreshView), typeof(RefreshViewRenderer))]
+[assembly: ExportRenderer(typeof(Shell), typeof(ShellRenderer))]
+[assembly: ExportRenderer(typeof(Path), typeof(PathRenderer))]
+[assembly: ExportRenderer(typeof(Ellipse), typeof(EllipseRenderer))]
+[assembly: ExportRenderer(typeof(Line), typeof(LineRenderer))]
+[assembly: ExportRenderer(typeof(Polygon), typeof(PolygonRenderer))]
+[assembly: ExportRenderer(typeof(Polyline), typeof(PolylineRenderer))]
+[assembly: ExportRenderer(typeof(Rectangle), typeof(RectangleRenderer))]
+[assembly: ExportRenderer(typeof(IndicatorView), typeof(IndicatorViewRenderer))]
 
 //ImageSources
 
 [assembly: ExportImageSourceHandler(typeof(FileImageSource), typeof(FileImageSourceHandler))]
 [assembly: ExportImageSourceHandler(typeof(StreamImageSource), typeof(StreamImageSourceHandler))]
 [assembly: ExportImageSourceHandler(typeof(UriImageSource), typeof(UriImageSourceHandler))]
+[assembly: ExportImageSourceHandler(typeof(FontImageSource), typeof(FontImageSourceHandler))]
 
 // Pages
 
@@ -57,3 +70,9 @@ using Xamarin.Forms.Platform.UWP;
 [assembly: Dependency(typeof(WindowsResourcesProvider))]
 [assembly: ExportRenderer(typeof(SearchBar), typeof(SearchBarRenderer))]
 [assembly: ExportRenderer(typeof(TabbedPage), typeof(TabbedPageRenderer))]
+
+//Fonts
+[assembly: ExportRenderer(typeof(EmbeddedFont), typeof(EmbeddedFontLoader))]
+
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Xamarin.Forms.DualScreen")]
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("Xamarin.Forms.Platform.UAP.UnitTests")]

@@ -17,6 +17,10 @@ namespace Xamarin.Forms.Xaml.UnitTests
 		public static string MockFieldRef = Icons.CLOSE;
 		public string InstanceProperty { get { return "InstanceProperty"; } }
 		public static readonly Color BackgroundColor = Color.Fuchsia;
+
+		public class Nested {
+			public static string Foo = "FOO";
+		}
 	}
 
 	public enum MockEnum : long
@@ -133,7 +137,16 @@ namespace Xamarin.Forms.Xaml.UnitTests
 			public void xStaticAndImplicitOperators(bool useCompiledXaml)
 			{
 				var layout = new XStatic(useCompiledXaml);
-				Assert.AreEqual("ic_close.png", layout.ToolbarItems[0].Icon.File);
+				Assert.AreEqual("ic_close.png", (layout.ToolbarItems[0].IconImageSource as FileImageSource).File);
+			}
+
+			[TestCase(false)]
+			[TestCase(true)]
+			// https://bugzilla.xamarin.com/show_bug.cgi?id=55096
+			public void xStaticAndNestedClasses(bool useCompiledXaml)
+			{
+				var layout = new XStatic(useCompiledXaml);
+				Assert.AreEqual(MockxStatic.Nested.Foo, layout.nestedField.Text);
 			}
 		}
 	}

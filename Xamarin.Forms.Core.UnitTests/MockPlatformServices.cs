@@ -1,6 +1,5 @@
 using System;
 using System.Threading.Tasks;
-using System.IO;
 using System.Threading;
 using System.Reflection;
 using System.IO.IsolatedStorage;
@@ -9,41 +8,46 @@ using Xamarin.Forms;
 using Xamarin.Forms.Core.UnitTests;
 using System.Security.Cryptography;
 using System.Text;
+using FileMode = System.IO.FileMode;
+using FileAccess = System.IO.FileAccess;
+using FileShare = System.IO.FileShare;
+using Stream = System.IO.Stream;
 using Xamarin.Forms.Internals;
-
-#if WINDOWS_PHONE
-using Xamarin.Forms.Platform.WinPhone;
-#endif
 
 [assembly:Dependency (typeof(MockDeserializer))]
 [assembly:Dependency (typeof(MockResourcesProvider))]
 
 namespace Xamarin.Forms.Core.UnitTests
 {
-	internal class MockPlatformServices : IPlatformServices
+	internal class MockPlatformServices : Internals.IPlatformServices
 	{
 		Action<Action> invokeOnMainThread;
 		Action<Uri> openUriAction;
 		Func<Uri, CancellationToken, Task<Stream>> getStreamAsync;
-		public MockPlatformServices (Action<Action> invokeOnMainThread = null, Action<Uri> openUriAction = null, Func<Uri, CancellationToken, Task<Stream>> getStreamAsync = null)
+		Func<VisualElement, double, double, SizeRequest> getNativeSizeFunc;
+		readonly bool useRealisticLabelMeasure;
+		readonly bool _isInvokeRequired;
+
+		public MockPlatformServices (Action<Action> invokeOnMainThread = null, Action<Uri> openUriAction = null, 
+			Func<Uri, CancellationToken, Task<Stream>> getStreamAsync = null, 
+			Func<VisualElement, double, double, SizeRequest> getNativeSizeFunc = null, 
+			bool useRealisticLabelMeasure = false, bool isInvokeRequired = false)
 		{
 			this.invokeOnMainThread = invokeOnMainThread;
 			this.openUriAction = openUriAction;
 			this.getStreamAsync = getStreamAsync;
+			this.getNativeSizeFunc = getNativeSizeFunc;
+			this.useRealisticLabelMeasure = useRealisticLabelMeasure;
+			_isInvokeRequired = isInvokeRequired;
 		}
 
-		static MD5CryptoServiceProvider checksum = new MD5CryptoServiceProvider ();
-
-		public string GetMD5Hash (string input)
+		public string GetHash (string input)
 		{
-			var bytes = checksum.ComputeHash (Encoding.UTF8.GetBytes (input));
-			var ret = new char [32];
-			for (int i = 0; i < 16; i++){
-				ret [i*2] = (char)hex (bytes [i] >> 4);
-				ret [i*2+1] = (char)hex (bytes [i] & 0xf);
-			}
-			return new string (ret);
+			return Internals.Crc64.GetHash(input);
 		}
+
+		string IPlatformServices.GetMD5Hash(string input) => GetHash(input);
+
 		static int hex (int v)
 		{
 			if (v < 10)
@@ -65,7 +69,23 @@ namespace Xamarin.Forms.Core.UnitTests
 				case NamedSize.Large:
 					return 16;
 				default:
-					throw new ArgumentOutOfRangeException ("size");
+					throw new ArgumentOutOfRangeException (nameof(size));
+			}
+		}
+
+		public Color GetNamedColor(string name)
+		{
+			// Some mock values to test color type converter
+			switch (name)
+			{
+				case "SystemBlue":
+					return Color.FromRgb(0, 122, 255);
+				case "SystemChromeHighColor":
+					return Color.FromHex("#FF767676");
+				case "HoloBlueBright":
+					return Color.FromHex("#ff00ddff");
+				default:
+					return Color.Default;
 			}
 		}
 
@@ -79,7 +99,7 @@ namespace Xamarin.Forms.Core.UnitTests
 
 		public bool IsInvokeRequired
 		{
-			get { return false; }
+			get { return _isInvokeRequired; }
 		}
 
 		public string RuntimePlatform { get; set; }
@@ -92,7 +112,7 @@ namespace Xamarin.Forms.Core.UnitTests
 				invokeOnMainThread (action);
 		}
 
-		public Ticker CreateTicker()
+		public Internals.Ticker CreateTicker()
 		{
 			return new MockTicker();
 		}
@@ -121,16 +141,12 @@ namespace Xamarin.Forms.Core.UnitTests
 			return AppDomain.CurrentDomain.GetAssemblies ();
 		}
 
-		public IIsolatedStorageFile GetUserStoreForApplication ()
+		public Internals.IIsolatedStorageFile GetUserStoreForApplication ()
 		{
-#if WINDOWS_PHONE
-			return new MockIsolatedStorageFile (IsolatedStorageFile.GetUserStoreForApplication ());
-#else
 			return new MockIsolatedStorageFile (IsolatedStorageFile.GetUserStoreForAssembly ());
-#endif
 		}
 
-		public class MockIsolatedStorageFile : IIsolatedStorageFile
+		public class MockIsolatedStorageFile : Internals.IIsolatedStorageFile
 		{
 			readonly IsolatedStorageFile isolatedStorageFile;
 			public MockIsolatedStorageFile (IsolatedStorageFile isolatedStorageFile)
@@ -149,15 +165,15 @@ namespace Xamarin.Forms.Core.UnitTests
 				return Task.FromResult (true);
 			}
 
-			public Task<Stream> OpenFileAsync (string path, Internals.FileMode mode, Internals.FileAccess access)
+			public Task<Stream> OpenFileAsync (string path, FileMode mode, FileAccess access)
 			{
-				Stream stream = isolatedStorageFile.OpenFile (path, (System.IO.FileMode)mode, (System.IO.FileAccess)access);
+				Stream stream = isolatedStorageFile.OpenFile (path, mode, access);
 				return Task.FromResult (stream);
 			}
 
-			public Task<Stream> OpenFileAsync (string path, Internals.FileMode mode, Internals.FileAccess access, Internals.FileShare share)
+			public Task<Stream> OpenFileAsync (string path, FileMode mode, FileAccess access, FileShare share)
 			{
-				Stream stream = isolatedStorageFile.OpenFile (path, (System.IO.FileMode)mode, (System.IO.FileAccess)access, (System.IO.FileShare)share);
+				Stream stream = isolatedStorageFile.OpenFile (path, mode, access, share);
 				return Task.FromResult (stream);
 			}
 
@@ -171,9 +187,38 @@ namespace Xamarin.Forms.Core.UnitTests
 				return Task.FromResult (isolatedStorageFile.GetLastWriteTime (path));
 			}
 		}
+
+		public void QuitApplication()
+		{
+
+		}
+
+		public SizeRequest GetNativeSize (VisualElement view, double widthConstraint, double heightConstraint)
+		{
+			if (getNativeSizeFunc != null)
+				return getNativeSizeFunc (view, widthConstraint, heightConstraint);
+			// EVERYTHING IS 100 x 20
+
+			var label = view as Label;
+			if (label != null && useRealisticLabelMeasure) {
+				var letterSize = new Size (5, 10);
+				var w = label.Text.Length * letterSize.Width;
+				var h = letterSize.Height;
+				if (!double.IsPositiveInfinity (widthConstraint) && w > widthConstraint) {
+					h = ((int) w / (int) widthConstraint) * letterSize.Height;
+					w = widthConstraint - (widthConstraint % letterSize.Width);
+
+				}
+				return new SizeRequest (new Size (w, h), new Size (Math.Min (10, w), h));
+			}
+
+			return new SizeRequest(new Size (100, 20));
+		}
+
+		public OSAppTheme RequestedTheme { get; set; }
 	}
 
-	internal class MockDeserializer : IDeserializer
+	internal class MockDeserializer : Internals.IDeserializer
 	{
 		public Task<IDictionary<string, object>> DeserializePropertiesAsync ()
 		{
@@ -186,9 +231,9 @@ namespace Xamarin.Forms.Core.UnitTests
 		}
 	}
 
-	internal class MockResourcesProvider : ISystemResourcesProvider
+	internal class MockResourcesProvider : Internals.ISystemResourcesProvider
 	{
-		public IResourceDictionary GetSystemResources ()
+		public Internals.IResourceDictionary GetSystemResources ()
 		{
 			var dictionary = new ResourceDictionary ();
 			Style style;
@@ -226,7 +271,7 @@ namespace Xamarin.Forms.Core.UnitTests
 		}
 	}
 
-	internal class MockTicker : Ticker
+	internal class MockTicker : Internals.Ticker
 	{
 		bool _enabled;
 

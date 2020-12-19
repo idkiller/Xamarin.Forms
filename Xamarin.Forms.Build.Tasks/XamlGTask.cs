@@ -1,264 +1,68 @@
 ﻿using System;
-using System.CodeDom;
-using System.CodeDom.Compiler;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Xml;
 using Microsoft.Build.Framework;
 using Microsoft.Build.Utilities;
-using Microsoft.CSharp;
-using Xamarin.Forms.Xaml;
+using IOPath = System.IO.Path;
 
 namespace Xamarin.Forms.Build.Tasks
 {
 	public class XamlGTask : Task
 	{
-		internal static CodeDomProvider Provider = new CSharpCodeProvider();
+		[Required]
+		public ITaskItem[] XamlFiles { get; set; }
 
 		[Required]
-		public string Source { get; set; }
+		public ITaskItem[] OutputFiles { get; set; }
 
 		public string Language { get; set; }
-
 		public string AssemblyName { get; set; }
-
-		[Output]
-		public string OutputFile { get; set; }
+		public string References { get; set; }		
 
 		public override bool Execute()
 		{
-			if (Source == null || OutputFile == null)
-			{
+			bool success = true;
+			Log.LogMessage(MessageImportance.Normal, "Generating code behind for XAML files");
+
+			//NOTE: should not happen due to [Required], but there appears to be a place this is class is called directly
+			if (XamlFiles == null || OutputFiles == null) {
 				Log.LogMessage("Skipping XamlG");
 				return true;
 			}
 
-			Log.LogMessage("Source: {0}", Source);
-			Log.LogMessage("Language: {0}", Language);
-			Log.LogMessage("AssemblyName: {0}", AssemblyName);
-			Log.LogMessage("OutputFile {0}", OutputFile);
-
-			try
-			{
-				GenerateFile(Source, OutputFile);
-				return true;
-			}
-			catch (XmlException xe)
-			{
-				Log.LogError(null, null, null, Source, xe.LineNumber, xe.LinePosition, 0, 0, xe.Message, xe.HelpLink, xe.Source);
-
+			if (XamlFiles.Length != OutputFiles.Length) {
+				Log.LogError("\"{2}\" refers to {0} item(s), and \"{3}\" refers to {1} item(s). They must have the same number of items.", XamlFiles.Length, OutputFiles.Length, "XamlFiles", "OutputFiles");
 				return false;
 			}
-			catch (Exception e)
-			{
-				Log.LogError(null, null, null, Source, 0, 0, 0, 0, e.Message, e.HelpLink, e.Source);
-				return false;
-			}
-		}
 
-		internal static void ParseXaml(TextReader xaml, out string rootType, out string rootNs, out CodeTypeReference baseType,
-			out IDictionary<string, CodeTypeReference> namesAndTypes)
-		{
-			var xmlDoc = new XmlDocument();
-			xmlDoc.Load(xaml);
-
-			var nsmgr = new XmlNamespaceManager(xmlDoc.NameTable);
-			nsmgr.AddNamespace("x", "http://schemas.microsoft.com/winfx/2006/xaml");
-			nsmgr.AddNamespace("x2009", "http://schemas.microsoft.com/winfx/2009/xaml");
-			nsmgr.AddNamespace("f", "http://xamarin.com/schemas/2014/forms");
-
-			var root = xmlDoc.SelectSingleNode("/*", nsmgr);
-			if (root == null)
-			{
-				Console.Error.WriteLine("{0}: No root node found");
-				rootType = null;
-				rootNs = null;
-				baseType = null;
-				namesAndTypes = null;
-				return;
-			}
-
-			var rootClass = root.Attributes["Class", "http://schemas.microsoft.com/winfx/2006/xaml"] ??
-			                root.Attributes["Class", "http://schemas.microsoft.com/winfx/2009/xaml"];
-			if (rootClass == null)
-			{
-				rootType = null;
-				rootNs = null;
-				baseType = null;
-				namesAndTypes = null;
-				return;
-			}
-
-			string rootAsm, targetPlatform;
-			XmlnsHelper.ParseXmlns(rootClass.Value, out rootType, out rootNs, out rootAsm, out targetPlatform);
-			namesAndTypes = GetNamesAndTypes(root, nsmgr);
-
-			var typeArguments = root.Attributes["TypeArguments", "http://schemas.microsoft.com/winfx/2009/xaml"];
-
-			baseType = GetType(root.NamespaceURI, root.LocalName, typeArguments == null ? null : typeArguments.Value.Split(','),
-				root.GetNamespaceOfPrefix);
-		}
-
-		internal static void GenerateCode(string rootType, string rootNs, CodeTypeReference baseType,
-			IDictionary<string, CodeTypeReference> namesAndTypes, string xamlFile, string outFile)
-		{
-			if (rootType == null)
-			{
-				File.WriteAllText(outFile, "");
-				return;
-			}
-
-			var ccu = new CodeCompileUnit();
-			var declNs = new CodeNamespace(rootNs);
-			ccu.Namespaces.Add(declNs);
-
-			var declType = new CodeTypeDeclaration(rootType) {
-				IsPartial = true,
-				CustomAttributes = {
-					new CodeAttributeDeclaration(new CodeTypeReference($"global::{typeof(XamlFilePathAttribute).FullName}"),
-						 new CodeAttributeArgument(new CodePrimitiveExpression(xamlFile)))
-				}
-			};
-			declType.BaseTypes.Add(baseType);
-
-			declNs.Types.Add(declType);
-
-			var initcomp = new CodeMemberMethod
-			{
-				Name = "InitializeComponent",
-				CustomAttributes =
-				{
-					new CodeAttributeDeclaration(new CodeTypeReference($"global::{typeof (GeneratedCodeAttribute).FullName}"),
-						new CodeAttributeArgument(new CodePrimitiveExpression("Xamarin.Forms.Build.Tasks.XamlG")),
-						new CodeAttributeArgument(new CodePrimitiveExpression("0.0.0.0")))
-				}
-			};
-			declType.Members.Add(initcomp);
-
-			initcomp.Statements.Add(new CodeMethodInvokeExpression(
-				new CodeTypeReferenceExpression(new CodeTypeReference($"global::{typeof(Extensions).FullName}")),
-				"LoadFromXaml", new CodeThisReferenceExpression(), new CodeTypeOfExpression(declType.Name)));
-
-			foreach (var entry in namesAndTypes)
-			{
-				string name = entry.Key;
-				var type = entry.Value;
-
-				var field = new CodeMemberField
-				{
-					Name = name,
-					Type = type,
-					CustomAttributes =
-					{
-						new CodeAttributeDeclaration(new CodeTypeReference($"global::{typeof (GeneratedCodeAttribute).FullName}"),
-							new CodeAttributeArgument(new CodePrimitiveExpression("Xamarin.Forms.Build.Tasks.XamlG")),
-							new CodeAttributeArgument(new CodePrimitiveExpression("0.0.0.0")))
+			for (int i = 0; i < XamlFiles.Length; i++) {
+				var xamlFile = XamlFiles[i];
+				var outputFile = OutputFiles[i].ItemSpec;
+				if (IOPath.DirectorySeparatorChar == '/' && outputFile.Contains(@"\"))
+					outputFile = outputFile.Replace('\\','/');
+				else if (IOPath.DirectorySeparatorChar == '\\' && outputFile.Contains(@"/"))
+					outputFile = outputFile.Replace('/', '\\');
+	
+				var generator = new XamlGenerator(xamlFile, Language, AssemblyName, outputFile, References, Log);
+				try {
+					if (!generator.Execute()) {
+						//If Execute() fails, the file still needs to exist because it is added to the <Compile/> ItemGroup
+						File.WriteAllText (outputFile, string.Empty);
 					}
-				};
-
-				declType.Members.Add(field);
-
-				var find_invoke = new CodeMethodInvokeExpression(
-					new CodeMethodReferenceExpression(
-						new CodeTypeReferenceExpression(new CodeTypeReference($"global::{typeof(NameScopeExtensions).FullName}")),
-						"FindByName", type),
-					new CodeThisReferenceExpression(), new CodePrimitiveExpression(name));
-
-				//CodeCastExpression cast = new CodeCastExpression (type, find_invoke);
-
-				CodeAssignStatement assign = new CodeAssignStatement(
-					new CodeVariableReferenceExpression(name), find_invoke);
-
-				initcomp.Statements.Add(assign);
-			}
-
-			using (var writer = new StreamWriter(outFile))
-				Provider.GenerateCodeFromCompileUnit(ccu, writer, new CodeGeneratorOptions());
-		}
-
-		internal static void GenerateFile(string xamlFile, string outFile)
-		{
-			string rootType, rootNs;
-			CodeTypeReference baseType;
-			IDictionary<string, CodeTypeReference> namesAndTypes;
-
-			using (StreamReader reader = File.OpenText(xamlFile))
-				ParseXaml(reader, out rootType, out rootNs, out baseType, out namesAndTypes);
-			GenerateCode(rootType, rootNs, baseType, namesAndTypes, System.IO.Path.GetFullPath(xamlFile), outFile);
-		}
-
-		static Dictionary<string, CodeTypeReference> GetNamesAndTypes(XmlNode root, XmlNamespaceManager nsmgr)
-		{
-			var res = new Dictionary<string, CodeTypeReference>();
-
-			foreach (string attrib in new[] { "x:Name", "x2009:Name" })
-			{
-				XmlNodeList names =
-					root.SelectNodes(
-						"//*[@" + attrib +
-						"][not(ancestor:: f:DataTemplate) and not(ancestor:: f:ControlTemplate) and not(ancestor:: f:Style)]", nsmgr);
-				foreach (XmlNode node in names)
-				{
-					// Don't take the root canvas
-					if (node == root)
-						continue;
-
-					XmlAttribute attr = node.Attributes["Name", "http://schemas.microsoft.com/winfx/2006/xaml"] ??
-					                    node.Attributes["Name", "http://schemas.microsoft.com/winfx/2009/xaml"];
-					XmlAttribute typeArgsAttr = node.Attributes["x:TypeArguments"];
-					var typeArgsList = typeArgsAttr == null ? null : typeArgsAttr.Value.Split(',').ToList();
-					string name = attr.Value;
-
-					res[name] = GetType(node.NamespaceURI, node.LocalName, typeArgsList, node.GetNamespaceOfPrefix);
+				}
+				catch (XmlException xe) {
+					Log.LogError(null, null, null, xamlFile.ItemSpec, xe.LineNumber, xe.LinePosition, 0, 0, xe.Message, xe.HelpLink, xe.Source);
+					Log.LogMessage(MessageImportance.Low, xe.StackTrace);
+					success = false;
+				}
+				catch (Exception e) {
+					Log.LogError(null, null, null, xamlFile.ItemSpec, 0, 0, 0, 0, e.Message, e.HelpLink, e.Source);
+					Log.LogMessage(MessageImportance.Low, e.StackTrace);
+					success = false;
 				}
 			}
 
-			return res;
-		}
-
-		static CodeTypeReference GetType(string nsuri, string type, IList<string> typeArguments = null,
-			Func<string, string> getNamespaceOfPrefix = null)
-		{
-			var ns = GetNamespace(nsuri);
-			if (ns != null)
-				type = String.Concat(ns, ".", type);
-
-			if (typeArguments != null)
-				type = String.Concat(type, "`", typeArguments.Count);
-
-			var returnType = new CodeTypeReference(type);
-			if (ns != null)
-				returnType.Options |= CodeTypeReferenceOptions.GlobalReference;
-
-			if (typeArguments != null)
-			{
-				foreach (var typeArg in typeArguments)
-				{
-					var prefix = "";
-					var _type = typeArg;
-					if (typeArg.Contains(":"))
-					{
-						prefix = typeArg.Split(':')[0].Trim();
-						_type = typeArg.Split(':')[1].Trim();
-					}
-					var ns_uri = getNamespaceOfPrefix(prefix);
-					returnType.TypeArguments.Add(GetType(ns_uri, _type, null, getNamespaceOfPrefix));
-				}
-			}
-
-			return returnType;
-		}
-
-		static string GetNamespace(string namespaceuri)
-		{
-			if (namespaceuri == "http://xamarin.com/schemas/2014/forms")
-				return "Xamarin.Forms";
-			if (namespaceuri == "http://schemas.microsoft.com/winfx/2009/xaml")
-				return "System";
-			if (namespaceuri != "http://schemas.microsoft.com/winfx/2006/xaml" && !namespaceuri.Contains("clr-namespace"))
-				throw new Exception(String.Format("Can't load types from xmlns {0}", namespaceuri));
-			return XmlnsHelper.ParseNamespaceFromXmlns(namespaceuri);
+			return success;
 		}
 	}
 }

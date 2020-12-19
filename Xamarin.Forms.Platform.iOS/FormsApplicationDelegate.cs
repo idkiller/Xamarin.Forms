@@ -12,6 +12,17 @@ namespace Xamarin.Forms.Platform.iOS
 		Application _application;
 		bool _isSuspended;
 		UIWindow _window;
+		public override UIWindow Window
+		{
+			get
+			{
+				return _window;
+			}
+			set
+			{
+				_window = value;
+			}
+		}
 
 		protected FormsApplicationDelegate()
 		{
@@ -37,7 +48,8 @@ namespace Xamarin.Forms.Platform.iOS
 			// prepare you apps window and views for display
 			// keep lightweight, anything long winded should be executed asynchronously on a secondary thread.
 			// application:didFinishLaunchingWithOptions
-			_window = new UIWindow(UIScreen.MainScreen.Bounds);
+			if (Window == null)
+				Window = new UIWindow(UIScreen.MainScreen.Bounds);
 
 			if (_application == null)
 				throw new InvalidOperationException("You MUST invoke LoadApplication () before calling base.FinishedLaunching ()");
@@ -62,13 +74,13 @@ namespace Xamarin.Forms.Platform.iOS
 		}
 
 		// transitioning to background
-		public override async void OnResignActivation(UIApplication uiApplication)
+		public override void OnResignActivation(UIApplication uiApplication)
 		{
 			// applicationWillResignActive
 			if (_application != null)
 			{
 				_isSuspended = true;
-				await _application.SendSleepAsync();
+				_application.SendSleep();
 			}
 		}
 
@@ -107,7 +119,10 @@ namespace Xamarin.Forms.Platform.iOS
 		protected override void Dispose(bool disposing)
 		{
 			if (disposing && _application != null)
+			{
 				_application.PropertyChanged -= ApplicationOnPropertyChanged;
+				_application.PropertyChanging -= ApplicationOnPropertyChanging;
+			}
 
 			base.Dispose(disposing);
 		}
@@ -122,6 +137,13 @@ namespace Xamarin.Forms.Platform.iOS
 			(application as IApplicationController)?.SetAppIndexingProvider(new IOSAppIndexingProvider());
 
 			application.PropertyChanged += ApplicationOnPropertyChanged;
+			application.PropertyChanging += ApplicationOnPropertyChanging;
+		}
+
+		void ApplicationOnPropertyChanging(object sender, PropertyChangingEventArgs args)
+		{
+			if (args.PropertyName == nameof(_application.MainPage))
+				UpdatingMainPage();
 		}
 
 		void ApplicationOnPropertyChanged(object sender, PropertyChangedEventArgs args)
@@ -156,7 +178,16 @@ namespace Xamarin.Forms.Platform.iOS
 		void SetMainPage()
 		{
 			UpdateMainPage();
-			_window.MakeKeyAndVisible();
+			Window.MakeKeyAndVisible();
+		}
+
+		void UpdatingMainPage()
+		{
+			if (_application.MainPage == null)
+				return;
+
+			var platformRenderer = Window.RootViewController as PlatformRenderer;
+			platformRenderer.Platform.MarkForRemoval();
 		}
 
 		void UpdateMainPage()
@@ -164,12 +195,11 @@ namespace Xamarin.Forms.Platform.iOS
 			if (_application.MainPage == null)
 				return;
 
-			var platformRenderer = (PlatformRenderer)_window.RootViewController;
-
+			var platformRenderer = Window.RootViewController as PlatformRenderer;
 			if (platformRenderer != null)
 				((IDisposable)platformRenderer.Platform).Dispose();
 
-			_window.RootViewController = _application.MainPage.CreateViewController();
+			Window.RootViewController = _application.MainPage.CreateViewController();
 		}
 	}
 }

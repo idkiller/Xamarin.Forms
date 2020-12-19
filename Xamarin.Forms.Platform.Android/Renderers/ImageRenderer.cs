@@ -1,19 +1,33 @@
 using System;
 using System.ComponentModel;
-using System.IO;
 using System.Threading.Tasks;
+using Android.Content;
 using Android.Graphics;
+using Android.Views;
 using AImageView = Android.Widget.ImageView;
 using Xamarin.Forms.Internals;
 
 namespace Xamarin.Forms.Platform.Android
 {
+	internal interface IImageRendererController
+	{
+		void SkipInvalidate();
+		bool IsDisposed { get; }
+		void SetFormsAnimationDrawable(IFormsAnimationDrawable formsAnimationDrawable);
+	}
+
 	public class ImageRenderer : ViewRenderer<Image, AImageView>
 	{
 		bool _isDisposed;
+		readonly MotionEventHelper _motionEventHelper = new MotionEventHelper();
 
-		IElementController ElementController => Element as IElementController;
+		public ImageRenderer(Context context) : base(context)
+		{
+			AutoPackage = false;
+		}
 
+		[Obsolete("This constructor is obsolete as of version 2.5. Please use ImageRenderer(Context) instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public ImageRenderer()
 		{
 			AutoPackage = false;
@@ -34,7 +48,7 @@ namespace Xamarin.Forms.Platform.Android
 			return new FormsImageView(Context);
 		}
 
-		protected override void OnElementChanged(ElementChangedEventArgs<Image> e)
+		protected override async void OnElementChanged(ElementChangedEventArgs<Image> e)
 		{
 			base.OnElementChanged(e);
 
@@ -44,78 +58,85 @@ namespace Xamarin.Forms.Platform.Android
 				SetNativeControl(view);
 			}
 
-			UpdateBitmap(e.OldElement);
+			_motionEventHelper.UpdateElement(e.NewElement);
+
+			await TryUpdateBitmap(e.OldElement);
+
 			UpdateAspect();
+
+			if (e.NewElement is IImageController imageController && imageController.GetLoadAsAnimation())
+				UpdateAnimations();
 		}
 
-		protected override void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
+		protected override async void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
+			if (this.IsDisposed())
+			{
+				return;
+			}
+
 			base.OnElementPropertyChanged(sender, e);
 
 			if (e.PropertyName == Image.SourceProperty.PropertyName)
-				UpdateBitmap();
+				await TryUpdateBitmap();
 			else if (e.PropertyName == Image.AspectProperty.PropertyName)
 				UpdateAspect();
+			else if (e.Is(Image.IsAnimationPlayingProperty))
+				UpdateAnimations();
+		}
+
+		void UpdateAnimations()
+		{
+			Log.Warning(nameof(ImageRenderer), "Animations do not work with Legacy Renderers. Please remove the \"UseLegacyRenderers\" flag or change your renderer to inherit from the fast image renderer.");
 		}
 
 		void UpdateAspect()
 		{
+			if (Element == null || Control == null || Control.IsDisposed())
+			{
+				return;
+			}
+
 			AImageView.ScaleType type = Element.Aspect.ToScaleType();
 			Control.SetScaleType(type);
 		}
 
-		async void UpdateBitmap(Image previous = null)
+		protected virtual async Task TryUpdateBitmap(Image previous = null)
 		{
-			if (Device.IsInvokeRequired)
-				throw new InvalidOperationException("Image Bitmap must not be updated from background thread");
+			// By default we'll just catch and log any exceptions thrown by UpdateBitmap so they don't bring down
+			// the application; a custom renderer can override this method and handle exceptions from
+			// UpdateBitmap differently if it wants to
 
-			if (previous != null && Equals(previous.Source, Element.Source))
-				return;
-
-			((IImageController)Element).SetIsLoading(true);
-
-			var formsImageView = Control as FormsImageView;
-			formsImageView?.SkipInvalidate();
-
-			Control.SetImageResource(global::Android.Resource.Color.Transparent);
-
-			ImageSource source = Element.Source;
-			Bitmap bitmap = null;
-			IImageSourceHandler handler;
-
-			if (source != null && (handler = Internals.Registrar.Registered.GetHandler<IImageSourceHandler>(source.GetType())) != null)
+			try
 			{
-				try
-				{
-					bitmap = await handler.LoadImageAsync(source, Context);
-				}
-				catch (TaskCanceledException)
-				{
-				}
-				catch (IOException ex)
-				{
-					Log.Warning("Xamarin.Forms.Platform.Android.ImageRenderer", "Error updating bitmap: {0}", ex);
-				}
+				await UpdateBitmap(previous);
 			}
-
-			if (Element == null || !Equals(Element.Source, source))
+			catch (Exception ex)
 			{
-				bitmap?.Dispose();
+				Log.Warning(nameof(ImageRenderer), "Error loading image: {0}", ex);
+			}
+			finally
+			{
+				((IImageController)Element)?.SetIsLoading(false);
+			}
+		}
+
+		protected async Task UpdateBitmap(Image previous = null)
+		{
+			if (Element == null || Control == null || Control.IsDisposed())
+			{
 				return;
 			}
 
-			if (!_isDisposed)
-			{
-				if (bitmap == null && source is FileImageSource)
-					Control.SetImageResource(ResourceManager.GetDrawableByName(((FileImageSource)source).File));
-				else
-					Control.SetImageBitmap(bitmap);
+			await Control.UpdateBitmap(Element, previous).ConfigureAwait(false);
+		}
 
-				bitmap?.Dispose();
+		public override bool OnTouchEvent(MotionEvent e)
+		{
+			if (base.OnTouchEvent(e))
+				return true;
 
-				((IImageController)Element).SetIsLoading(false);
-				((IVisualElementController)Element).NativeSizeChanged();
-			}
+			return _motionEventHelper.HandleMotionEvent(Parent, e);
 		}
 	}
 }

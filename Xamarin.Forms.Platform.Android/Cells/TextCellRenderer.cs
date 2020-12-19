@@ -1,9 +1,9 @@
+using System;
 using System.ComponentModel;
 using Android.Content;
 using Android.Views;
-using AView = Android.Views.View;
-using AColor = Android.Graphics.Color;
 using Xamarin.Forms.Internals;
+using AView = Android.Views.View;
 
 namespace Xamarin.Forms.Platform.Android
 {
@@ -20,6 +20,8 @@ namespace Xamarin.Forms.Platform.Android
 			UpdateDetailText();
 			UpdateHeight();
 			UpdateIsEnabled();
+			UpdateFlowDirection();
+			UpdateAutomationId();
 			View.SetImageVisible(false);
 
 			return View;
@@ -27,6 +29,11 @@ namespace Xamarin.Forms.Platform.Android
 
 		protected override void OnCellPropertyChanged(object sender, PropertyChangedEventArgs args)
 		{
+			if (View.IsDisposed())
+			{
+				return;
+			}
+
 			if (args.PropertyName == TextCell.TextProperty.PropertyName || args.PropertyName == TextCell.TextColorProperty.PropertyName)
 				UpdateMainText();
 			else if (args.PropertyName == TextCell.DetailProperty.PropertyName || args.PropertyName == TextCell.DetailColorProperty.PropertyName)
@@ -35,6 +42,15 @@ namespace Xamarin.Forms.Platform.Android
 				UpdateIsEnabled();
 			else if (args.PropertyName == "RenderHeight")
 				UpdateHeight();
+			else if (args.PropertyName == VisualElement.FlowDirectionProperty.PropertyName)
+				UpdateFlowDirection();
+			else if (args.PropertyName == VisualElement.AutomationIdProperty.PropertyName)
+				UpdateAutomationId();
+		}
+
+		void UpdateAutomationId()
+		{
+			View.ContentDescription = Cell.AutomationId;
 		}
 
 		void UpdateDetailText()
@@ -53,6 +69,11 @@ namespace Xamarin.Forms.Platform.Android
 		{
 			var cell = (TextCell)Cell;
 			View.SetIsEnabled(cell.IsEnabled);
+		}
+
+		void UpdateFlowDirection()
+		{
+			View.UpdateFlowDirection(ParentView);
 		}
 
 		void UpdateMainText()

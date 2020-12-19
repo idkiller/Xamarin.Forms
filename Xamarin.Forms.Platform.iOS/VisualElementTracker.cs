@@ -3,8 +3,12 @@ using System.ComponentModel;
 using System.Drawing;
 using System.Threading;
 using CoreAnimation;
+using CoreGraphics;
 using Xamarin.Forms.Internals;
+
 #if __MOBILE__
+using UIKit;
+using Xamarin.Forms.PlatformConfiguration.iOSSpecific;
 
 namespace Xamarin.Forms.Platform.iOS
 #else
@@ -14,6 +18,8 @@ namespace Xamarin.Forms.Platform.MacOS
 {
 	public class VisualElementTracker : IDisposable
 	{
+		const string ClipShapeLayer = "ClipShapeLayer";
+
 		readonly EventHandler<EventArg<VisualElement>> _batchCommittedHandler;
 
 		readonly PropertyChangedEventHandler _propertyChangedHandler;
@@ -28,21 +34,27 @@ namespace Xamarin.Forms.Platform.MacOS
 		Rectangle _lastParentBounds;
 #endif
 		CALayer _layer;
+		CGPoint _originalAnchor;
 		int _updateCount;
 
-		public VisualElementTracker(IVisualElementRenderer renderer)
+		public VisualElementTracker(IVisualElementRenderer renderer) : this(renderer, true)
 		{
-			if (renderer == null)
-				throw new ArgumentNullException("renderer");
+		}
+
+		public VisualElementTracker(IVisualElementRenderer renderer, bool trackFrame)
+		{
+			Renderer = renderer ?? throw new ArgumentNullException("renderer");
 
 			_propertyChangedHandler = HandlePropertyChanged;
 			_sizeChangedEventHandler = HandleSizeChanged;
 			_batchCommittedHandler = HandleRedrawNeeded;
 
-			Renderer = renderer;
+			TrackFrame = trackFrame;
 			renderer.ElementChanged += OnRendererElementChanged;
 			SetElement(null, renderer.Element);
 		}
+
+		bool TrackFrame { get; set; }
 
 		IVisualElementRenderer Renderer { get; set; }
 
@@ -77,13 +89,35 @@ namespace Xamarin.Forms.Platform.MacOS
 
 		void HandlePropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
-			if (e.PropertyName == VisualElement.XProperty.PropertyName || e.PropertyName == VisualElement.YProperty.PropertyName || e.PropertyName == VisualElement.WidthProperty.PropertyName ||
-				e.PropertyName == VisualElement.HeightProperty.PropertyName || e.PropertyName == VisualElement.AnchorXProperty.PropertyName || e.PropertyName == VisualElement.AnchorYProperty.PropertyName ||
-				e.PropertyName == VisualElement.TranslationXProperty.PropertyName || e.PropertyName == VisualElement.TranslationYProperty.PropertyName || e.PropertyName == VisualElement.ScaleProperty.PropertyName ||
-				e.PropertyName == VisualElement.RotationProperty.PropertyName || e.PropertyName == VisualElement.RotationXProperty.PropertyName || e.PropertyName == VisualElement.RotationYProperty.PropertyName ||
-				e.PropertyName == VisualElement.IsVisibleProperty.PropertyName || e.PropertyName == VisualElement.IsEnabledProperty.PropertyName ||
-				e.PropertyName == VisualElement.InputTransparentProperty.PropertyName || e.PropertyName == VisualElement.OpacityProperty.PropertyName)
+			if (TrackFrame && (e.PropertyName == VisualElement.XProperty.PropertyName ||
+							   e.PropertyName == VisualElement.YProperty.PropertyName ||
+							   e.PropertyName == VisualElement.WidthProperty.PropertyName ||
+							   e.PropertyName == VisualElement.HeightProperty.PropertyName))
+			{
+				UpdateNativeControl();
+			}
+			else if (e.PropertyName == VisualElement.AnchorXProperty.PropertyName ||
+				e.PropertyName == VisualElement.AnchorYProperty.PropertyName ||
+				e.PropertyName == VisualElement.TranslationXProperty.PropertyName ||
+				e.PropertyName == VisualElement.TranslationYProperty.PropertyName ||
+				e.PropertyName == VisualElement.ScaleProperty.PropertyName ||
+				e.PropertyName == VisualElement.ScaleXProperty.PropertyName ||
+				e.PropertyName == VisualElement.ScaleYProperty.PropertyName ||
+				e.PropertyName == VisualElement.RotationProperty.PropertyName ||
+				e.PropertyName == VisualElement.RotationXProperty.PropertyName ||
+				e.PropertyName == VisualElement.RotationYProperty.PropertyName ||
+				e.PropertyName == VisualElement.IsVisibleProperty.PropertyName ||
+				e.PropertyName == VisualElement.IsEnabledProperty.PropertyName ||
+				e.PropertyName == VisualElement.InputTransparentProperty.PropertyName ||
+				e.PropertyName == VisualElement.OpacityProperty.PropertyName ||
+				e.PropertyName == Layout.CascadeInputTransparentProperty.PropertyName)
+			{
 				UpdateNativeControl(); // poorly optimized
+			}
+			else if (e.PropertyName == VisualElement.ClipProperty.PropertyName)
+			{
+				UpdateClip();
+			}
 		}
 
 		void HandleRedrawNeeded(object sender, EventArgs e)
@@ -112,7 +146,24 @@ namespace Xamarin.Forms.Platform.MacOS
 			if (view == null || view.Batched)
 				return;
 
-			var shouldInteract = !view.InputTransparent && view.IsEnabled;
+			bool shouldInteract;
+
+			if (view is Layout layout)
+			{
+				if (layout.InputTransparent)
+				{
+					shouldInteract = !layout.CascadeInputTransparent;
+				}
+				else
+				{
+					shouldInteract = layout.IsEnabled;
+				}
+			}
+			else
+			{
+				shouldInteract = !view.InputTransparent && view.IsEnabled;
+			}
+
 			if (_isInteractive != shouldInteract)
 			{
 #if __MOBILE__
@@ -121,13 +172,13 @@ namespace Xamarin.Forms.Platform.MacOS
 				_isInteractive = shouldInteract;
 			}
 
-			var boundsChanged = _lastBounds != view.Bounds;
+			var boundsChanged = _lastBounds != view.Bounds && TrackFrame;
 #if !__MOBILE__
 			var viewParent = view.RealParent as VisualElement;
 			var parentBoundsChanged = _lastParentBounds != (viewParent == null ? Rectangle.Zero : viewParent.Bounds);
+#else
+			var thread = !boundsChanged && !caLayer.Frame.IsEmpty && Application.Current?.OnThisPlatform()?.GetHandleControlUpdatesOnMainThread() == false;
 #endif
-			var thread = !boundsChanged && !caLayer.Frame.IsEmpty;
-
 			var anchorX = (float)view.AnchorX;
 			var anchorY = (float)view.AnchorY;
 			var translationX = (float)view.TranslationX;
@@ -136,16 +187,18 @@ namespace Xamarin.Forms.Platform.MacOS
 			var rotationY = (float)view.RotationY;
 			var rotation = (float)view.Rotation;
 			var scale = (float)view.Scale;
+			var scaleX = (float)view.ScaleX * scale;
+			var scaleY = (float)view.ScaleY * scale;
 			var width = (float)view.Width;
 			var height = (float)view.Height;
-			var x = (float)view.X;
-			var y = (float)view.Y;
+			var x = (float)view.X + (float)CompressedLayout.GetHeadlessOffset(view).X;
+			var y = (float)view.Y + (float)CompressedLayout.GetHeadlessOffset(view).Y;
 			var opacity = (float)view.Opacity;
 			var isVisible = view.IsVisible;
 
 			var updateTarget = Interlocked.Increment(ref _updateCount);
 
-			Action update = () =>
+			void update()
 			{
 				if (updateTarget != _updateCount)
 					return;
@@ -187,7 +240,7 @@ namespace Xamarin.Forms.Platform.MacOS
 #endif
 				// Dont ever attempt to actually change the layout of a Page unless it is a ContentPage
 				// iOS is a really big fan of you not actually modifying the View's of the UIViewControllers
-				if (shouldUpdate)
+				if (shouldUpdate && TrackFrame)
 				{
 #if __MOBILE__
 					var target = new RectangleF(x, y, width, height);
@@ -198,6 +251,9 @@ namespace Xamarin.Forms.Platform.MacOS
 #endif
 
 					// must reset transform prior to setting frame...
+					if(caLayer.AnchorPoint != _originalAnchor)
+						caLayer.AnchorPoint = _originalAnchor;
+
 					caLayer.Transform = transform;
 					uiview.Frame = target;
 					if (shouldRelayoutSublayers)
@@ -211,25 +267,41 @@ namespace Xamarin.Forms.Platform.MacOS
 #endif
 					return;
 				}
-#if __MOBILE__
-				caLayer.AnchorPoint = new PointF(anchorX, anchorY);
-#else
-				caLayer.AnchorPoint = new PointF(anchorX - 0.5f, anchorY - 0.5f);
+#if !__MOBILE__
+				// Y-axe on macos is inverted				
+				translationY = -translationY;
+				anchorY = 1 - anchorY;
+
+				// rotation direction on macos also inverted
+				rotationX = -rotationX;
+				rotationY = -rotationY;
+				rotation = -rotation;
+
+				//otherwise scaled/rotated image clipped by parent bounds
+				caLayer.MasksToBounds = false;
 #endif
+				caLayer.AnchorPoint = new PointF(anchorX, anchorY);
 				caLayer.Opacity = opacity;
 				const double epsilon = 0.001;
 
+#if !__MOBILE__
+				// fix position, position in macos is also relative to anchor point
+				// but it's (0,0) by default, so we don't need to substract 0.5
+				transform = transform.Translate(anchorX * width, 0, 0);
+				transform = transform.Translate(0, anchorY * height, 0);
+#else
 				// position is relative to anchor point
 				if (Math.Abs(anchorX - .5) > epsilon)
 					transform = transform.Translate((anchorX - .5f) * width, 0, 0);
 				if (Math.Abs(anchorY - .5) > epsilon)
 					transform = transform.Translate(0, (anchorY - .5f) * height, 0);
+#endif
 
 				if (Math.Abs(translationX) > epsilon || Math.Abs(translationY) > epsilon)
 					transform = transform.Translate(translationX, translationY, 0);
 
-				if (Math.Abs(scale - 1) > epsilon)
-					transform = transform.Scale(scale);
+				if (Math.Abs(scaleX - 1) > epsilon || Math.Abs(scaleY - 1) > epsilon)
+					transform = transform.Scale(scaleX, scaleY, scale);
 
 				// not just an optimization, iOS will not "pixel align" a view which has m34 set
 				if (Math.Abs(rotationY % 180) > epsilon || Math.Abs(rotationX % 180) > epsilon)
@@ -241,13 +313,26 @@ namespace Xamarin.Forms.Platform.MacOS
 					transform = transform.Rotate(rotationY * (float)Math.PI / 180.0f, 0.0f, 1.0f, 0.0f);
 
 				transform = transform.Rotate(rotation * (float)Math.PI / 180.0f, 0.0f, 0.0f, 1.0f);
-				caLayer.Transform = transform;
-			};
 
+				if (Foundation.NSThread.IsMain)
+				{
+					caLayer.Transform = transform;
+					return;
+				}
+				CoreFoundation.DispatchQueue.MainQueue.DispatchAsync(() =>
+				{
+					caLayer.Transform = transform;
+				});
+			}
+
+#if __MOBILE__
 			if (thread)
 				CADisplayLinkTicker.Default.Invoke(update);
 			else
 				update();
+#else
+			update();
+#endif
 
 			_lastBounds = view.Bounds;
 #if !__MOBILE__
@@ -278,6 +363,8 @@ namespace Xamarin.Forms.Platform.MacOS
 
 		void UpdateNativeControl()
 		{
+			Performance.Start(out string reference);
+
 			if (_disposed)
 				return;
 
@@ -290,11 +377,85 @@ namespace Xamarin.Forms.Platform.MacOS
 #if __MOBILE__
 				_isInteractive = Renderer.NativeView.UserInteractionEnabled;
 #endif
+
+				_originalAnchor = _layer.AnchorPoint;
 			}
 
 			OnUpdateNativeControl(_layer);
 
+			UpdateClip();
+
 			NativeControlUpdated?.Invoke(this, EventArgs.Empty);
+			Performance.Stop(reference);
+		}
+
+		void UpdateClip()
+		{
+			var element = Renderer.Element;
+			var uiview = Renderer.NativeView;
+
+			var formsGeometry = element.Clip;
+			var nativeGeometry = formsGeometry.ToCGPath();
+
+			var maskLayer = new CAShapeLayer
+			{
+				Name = ClipShapeLayer,
+				Path = nativeGeometry.Data,
+				FillRule = nativeGeometry.IsNonzeroFillRule ? CAShapeLayer.FillRuleNonZero : CAShapeLayer.FillRuleEvenOdd
+			};
+#if __MOBILE__
+			if (Forms.IsiOS11OrNewer)
+			{
+				if (formsGeometry != null)
+					uiview.Layer.Mask = maskLayer;
+				else
+				{
+					var isClipShapeLayer =
+						uiview.Layer.Mask != null &&
+						uiview.Layer.Mask.Name.Equals(ClipShapeLayer);
+
+					if (isClipShapeLayer)
+						uiview.Layer.Mask = null;
+				}
+			}
+			else
+			{
+				if (formsGeometry != null)
+				{
+					var maskView = new UIView
+					{
+						Frame = uiview.Frame,
+						BackgroundColor = UIColor.Black
+					};
+
+					maskView.Layer.Mask = maskLayer;
+
+					uiview.MaskView = maskView;
+				}
+				else
+				{
+					var isClipShapeLayer =
+						uiview.MaskView != null &&
+						uiview.MaskView.Layer.Mask != null &&
+						uiview.MaskView.Layer.Mask.Name.Equals(ClipShapeLayer);
+
+					if (isClipShapeLayer)
+						uiview.MaskView = null;
+				}
+			}
+#else
+			if (formsGeometry != null)
+				uiview.Layer.Mask = maskLayer;
+			else
+			{
+				var isClipShapeLayer =
+					uiview.Layer.Mask != null &&
+					uiview.Layer.Mask.Name.Equals(ClipShapeLayer);
+
+				if (isClipShapeLayer)
+					uiview.Layer.Mask = null;
+			}
+#endif
 		}
 	}
 }

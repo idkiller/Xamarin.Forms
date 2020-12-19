@@ -7,6 +7,8 @@ namespace Xamarin.Forms
 	{
 		public static readonly BindableProperty FileProperty = BindableProperty.Create("File", typeof(string), typeof(FileImageSource), default(string));
 
+		public override bool IsEmpty => string.IsNullOrEmpty(File);
+
 		public string File
 		{
 			get { return (string)GetValue(FileProperty); }
@@ -16,6 +18,11 @@ namespace Xamarin.Forms
 		public override Task<bool> Cancel()
 		{
 			return Task.FromResult(false);
+		}
+
+		public override string ToString()
+		{
+			return $"File: {File}";
 		}
 
 		public static implicit operator FileImageSource(string file)

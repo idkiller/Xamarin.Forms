@@ -1,4 +1,5 @@
 ﻿using System;
+using System.ComponentModel;
 using System.Globalization;
 
 namespace Xamarin.Forms
@@ -13,13 +14,15 @@ namespace Xamarin.Forms
 			return sourceType == typeof(string);
 		}
 
-		[Obsolete("use ConvertFromInvariantString (string)")]
+		[Obsolete("ConvertFrom is obsolete as of version 2.2.0. Please use ConvertFromInvariantString (string) instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public virtual object ConvertFrom(object o)
 		{
 			return null;
 		}
 
-		[Obsolete("use ConvertFromInvariantString (string)")]
+		[Obsolete("ConvertFrom is obsolete as of version 2.2.0. Please use ConvertFromInvariantString (string) instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public virtual object ConvertFrom(CultureInfo culture, object o)
 		{
 			return null;

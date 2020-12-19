@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using Android.Content;
 using Android.Opengl;
 using Javax.Microedition.Khronos.Opengles;
 using EGLConfig = Javax.Microedition.Khronos.Egl.EGLConfig;
@@ -7,10 +8,18 @@ using Object = Java.Lang.Object;
 
 namespace Xamarin.Forms.Platform.Android
 {
+	//public class OpenGLViewRenderer : ViewRenderer<OpenGLView, GLSurfaceView>
 	internal class OpenGLViewRenderer : ViewRenderer<OpenGLView, GLSurfaceView>
 	{
 		bool _disposed;
 
+		public OpenGLViewRenderer(Context context) : base(context)
+		{
+			AutoPackage = false;
+		}
+
+		[Obsolete("This constructor is obsolete as of version 2.5. Please use OpenGLViewRenderer(Context) instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public OpenGLViewRenderer()
 		{
 			AutoPackage = false;

@@ -9,7 +9,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Xamarin.Forms.Pages.UnitTests</RootNamespace>
     <AssemblyName>Xamarin.Forms.Pages.UnitTests</AssemblyName>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.7</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <TargetFrameworkProfile />
   </PropertyGroup>
@@ -31,14 +31,6 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Newtonsoft.Json, Version=6.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
-      <HintPath>..\packages\Newtonsoft.Json.6.0.4\lib\net45\Newtonsoft.Json.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
-    <Reference Include="nunit.framework, Version=2.6.4.14350, Culture=neutral, PublicKeyToken=96d09a1eb7f44a77, processorArchitecture=MSIL">
-      <HintPath>..\packages\NUnit.2.6.4\lib\nunit.framework.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -49,49 +41,45 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+    <PackageReference Include="NUnit" Version="3.12.0" />
+    <PackageReference Include="NUnit3TestAdapter">
+      <Version>3.15.1</Version>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\Xamarin.Forms.Core.UnitTests\MockDispatcherProvider.cs">
+      <Link>MockDispatcherProvider.cs</Link>
+    </Compile>
+    <Compile Include="..\Xamarin.Forms.Core.UnitTests\MockDispatcher.cs">
+      <Link>MockDispatcher.cs</Link>
+    </Compile>
     <Compile Include="..\Xamarin.Forms.Core.UnitTests\MockPlatformServices.cs">
       <Link>MockPlatformServices.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.UnitTests\UnitPlatform.cs">
-      <Link>UnitPlatform.cs</Link>
     </Compile>
     <Compile Include="DataPageTests.cs" />
     <Compile Include="DataSourceListTests.cs" />
     <Compile Include="IntegrationTests.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Xamarin.Forms.Core\Xamarin.Forms.Core.csproj">
       <Project>{57b8b73d-c3b5-4c42-869e-7b2f17d354ac}</Project>
       <Name>Xamarin.Forms.Core</Name>
     </ProjectReference>
-    <ProjectReference Include="..\Xamarin.Forms.Maps\Xamarin.Forms.Maps.csproj">
-      <Project>{7d13bac2-c6a4-416a-b07e-c169b199e52b}</Project>
-      <Name>Xamarin.Forms.Maps</Name>
-    </ProjectReference>
     <ProjectReference Include="..\Xamarin.Forms.Pages\Xamarin.Forms.Pages.csproj">
       <Project>{d6133dbd-6c60-4bd5-bea2-07e0a3927c31}</Project>
       <Name>Xamarin.Forms.Pages</Name>
     </ProjectReference>
-    <ProjectReference Include="..\Xamarin.Forms.Platform\Xamarin.Forms.Platform.csproj">
-      <Project>{67f9d3a8-f71e-4428-913f-c37ae82cdb24}</Project>
-      <Name>Xamarin.Forms.Platform</Name>
-    </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="packages.config">
-      <SubType>Designer</SubType>
-    </None>
   </ItemGroup>
   <ItemGroup>
     <Service Include="{82A7F48D-3B50-4B1E-B82E-3ADA8210C358}" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
-       Other similar extension points exist, see Microsoft.Common.targets.
-  <Target Name="BeforeBuild">
+  <Target Name="_CopyNUnitTestAdapterFiles" AfterTargets="Build">
+    <ItemGroup>
+      <_NUnitTestAdapterFiles Include="$(NuGetPackageRoot)NUnit3TestAdapter\%(Version)\build\net35\**" Condition="@(PackageReference -> '%(Identity)') == 'NUnit3TestAdapter'" InProject="False" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_NUnitTestAdapterFiles)" DestinationFolder="$(SolutionDir)packages\NUnitTestAdapter.AnyVersion\tools\%(RecursiveDir)" ContinueOnError="true" Retries="0" />
+    <Copy SourceFiles="@(_NUnitTestAdapterFiles)" DestinationFolder="$(SolutionDir)packages\NUnitTestAdapter.AnyVersion\build\%(RecursiveDir)" ContinueOnError="true" Retries="0" />
   </Target>
-  <Target Name="AfterBuild">
-  </Target>
-  -->
 </Project>

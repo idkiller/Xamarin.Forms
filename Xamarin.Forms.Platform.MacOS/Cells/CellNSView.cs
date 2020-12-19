@@ -3,6 +3,7 @@ using System.Linq;
 using System.ComponentModel;
 using AppKit;
 using CoreGraphics;
+using Xamarin.Forms.Platform.macOS.Extensions;
 
 namespace Xamarin.Forms.Platform.MacOS
 {
@@ -12,7 +13,6 @@ namespace Xamarin.Forms.Platform.MacOS
 		static readonly CGColor s_defaultHeaderViewsBackground = NSColor.LightGray.CGColor;
 		Cell _cell;
 		readonly NSTableViewCellStyle _style;
-		NSView _contexActionsTrackingView;
 
 		public Action<object, PropertyChangedEventArgs> PropertyChanged;
 
@@ -41,16 +41,13 @@ namespace Xamarin.Forms.Platform.MacOS
 				if (_cell == value)
 					return;
 
-				ICellController cellController = _cell;
-
-				if (cellController != null)
-					Device.BeginInvokeOnMainThread(cellController.SendDisappearing);
+				if (_cell != null)
+					Device.BeginInvokeOnMainThread(_cell.SendDisappearing);
 
 				_cell = value;
-				cellController = value;
 
-				if (cellController != null)
-					Device.BeginInvokeOnMainThread(cellController.SendAppearing);
+				if (_cell != null)
+					Device.BeginInvokeOnMainThread(_cell.SendAppearing);
 			}
 		}
 
@@ -107,13 +104,6 @@ namespace Xamarin.Forms.Platform.MacOS
 			TextLabel?.CenterTextVertically(new CGRect(imageWidth + padding, availableHeight - labelHeights, labelWidth,
 				labelHeights));
 
-			var topNSView = Subviews.LastOrDefault();
-			if (_contexActionsTrackingView != topNSView)
-			{
-				_contexActionsTrackingView.RemoveFromSuperview();
-				_contexActionsTrackingView.Frame = Frame;
-				AddSubview(_contexActionsTrackingView, NSWindowOrderingMode.Above, Subviews.LastOrDefault());
-			}
 			base.Layout();
 		}
 
@@ -124,7 +114,7 @@ namespace Xamarin.Forms.Platform.MacOS
 			NSView nativeCell;
 			if (reusable == null || !isRecycle)
 			{
-				var renderer = (CellRenderer)Internals.Registrar.Registered.GetHandler<IRegisterable>(cell.GetType());
+				var renderer = (CellRenderer)Internals.Registrar.Registered.GetHandlerForObject<IRegisterable>(cell);
 				nativeCell = renderer.GetCell(cell, null, tableView);
 			}
 			else
@@ -178,12 +168,7 @@ namespace Xamarin.Forms.Platform.MacOS
 					AddSubview(AccessoryView = accessoryView);
 				}
 			}
-			AddSubview(_contexActionsTrackingView = new TrackingClickNSView());
 		}
-	}
-
-	class TrackingClickNSView : NSView
-	{
 		public override void RightMouseDown(NSEvent theEvent)
 		{
 			HandleContextActions(theEvent);
@@ -193,7 +178,7 @@ namespace Xamarin.Forms.Platform.MacOS
 
 		void HandleContextActions(NSEvent theEvent)
 		{
-			var contextActionCell = (Superview as INativeElementView).Element as Cell;
+			var contextActionCell = this.Element as Cell;
 			var contextActionsCount = contextActionCell.ContextActions.Count;
 			if (contextActionsCount > 0)
 			{
@@ -201,28 +186,12 @@ namespace Xamarin.Forms.Platform.MacOS
 				for (int i = 0; i < contextActionsCount; i++)
 				{
 					var contextAction = contextActionCell.ContextActions[i];
-					var nsMenuItem = GetNSMenuItem(i, contextAction);
+					var nsMenuItem = contextAction.ToNSMenuItem(i);
 					menu.AddItem(nsMenuItem);
 				}
 
 				NSMenu.PopUpContextMenu(menu, theEvent, this);
 			}
-		}
-
-		static NSMenuItem GetNSMenuItem(int i, MenuItem contextAction)
-		{
-			var menuItem = new NSMenuItem(contextAction.Text ?? "");
-			menuItem.Tag = i;
-			menuItem.Enabled = contextAction.IsEnabled;
-			if (menuItem.Enabled)
-				menuItem.Activated += (sender, e) =>
-				{
-					((IMenuItemController)contextAction).Activate();
-				};
-			if (!string.IsNullOrEmpty(contextAction.Icon))
-				menuItem.Image = new NSImage(contextAction.Icon);
-
-			return menuItem;
 		}
 	}
 }

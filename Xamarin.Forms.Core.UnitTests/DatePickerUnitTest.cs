@@ -127,13 +127,13 @@ namespace Xamarin.Forms.Core.UnitTests
 			Assert.True (selected);
 		}
 
-		//static object[] DateTimes = {
-		//	new object[] { new DateTime (2006, 12, 20), new DateTime (2011, 11, 30) },
-		//	new object[] { new DateTime (1900, 1, 1), new DateTime (1999, 01, 15) }, // Minimum Date
-		//	new object[] { new DateTime (2006, 12, 20), new DateTime (2100, 12, 31) } // Maximum Date
-		//};
+		public static object[] DateTimes = {
+			new object[] { new DateTime (2006, 12, 20), new DateTime (2011, 11, 30) },
+			new object[] { new DateTime (1900, 1, 1), new DateTime (1999, 01, 15) }, // Minimum Date
+			new object[] { new DateTime (2006, 12, 20), new DateTime (2100, 12, 31) } // Maximum Date
+		};
 
-		[Test, TestCaseSource("DateTimes")]
+		[Test, TestCaseSource(nameof(DateTimes))]
 		public void DatePickerSelectedEventArgs (DateTime initialDate, DateTime finalDate)
 		{
 			var datePicker = new DatePicker ();
@@ -162,7 +162,7 @@ namespace Xamarin.Forms.Core.UnitTests
 		{
 			var datePicker = new DatePicker ();
 			Assert.DoesNotThrow (() => datePicker.SetValue (DatePicker.DateProperty, null));
-			Assert.AreEqual (DatePicker.DateProperty.DefaultValue, datePicker.Date);
+			Assert.AreEqual (DateTime.Today, datePicker.Date);
 		}
 
 		[Test]
@@ -173,6 +173,15 @@ namespace Xamarin.Forms.Core.UnitTests
 			DateTime? nullableDateTime = dateTime;
 			datePicker.SetValue (DatePicker.DateProperty, nullableDateTime);
 			Assert.AreEqual (dateTime, datePicker.Date);
+		}
+
+		[Test]
+		//https://github.com/xamarin/Xamarin.Forms/issues/5784
+		public void SetMaxAndMinDateTimeToNow()
+		{
+			var datePicker = new DatePicker();
+			datePicker.SetValue(DatePicker.MaximumDateProperty, DateTime.Now);
+			Assert.DoesNotThrow(() => datePicker.SetValue(DatePicker.MinimumDateProperty, DateTime.Now));
 		}
 	}
 }

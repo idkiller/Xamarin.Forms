@@ -7,22 +7,25 @@ using Mono.Cecil;
 using Mono.Cecil.Cil;
 
 using Xamarin.Forms.Xaml;
+using Xamarin.Forms.Build.Tasks;
 
 namespace Xamarin.Forms.Core.XamlC
 {
 	class BoundsTypeConverter : ICompiledTypeConverter
 	{
-		IEnumerable<Instruction> ICompiledTypeConverter.ConvertFromString(string value, ModuleDefinition module, BaseNode node)
+		public IEnumerable<Instruction> ConvertFromString(string value, ILContext context, BaseNode node)
 		{
+			var module = context.Body.Method.Module;
+
 			if (string.IsNullOrEmpty(value))
-				throw new XamlParseException($"Cannot convert \"{value}\" into {typeof(Rectangle)}", node);
+				throw new BuildException(BuildExceptionCode.Conversion, node, null, value, typeof(Rectangle));
 
 			double x = -1, y = -1, w = -1, h = -1;
 			bool hasX, hasY, hasW, hasH;
 			var xywh = value.Split(',');
 
 			if (xywh.Length != 2 && xywh.Length != 4)
-				throw new XamlParseException($"Cannot convert \"{value}\" into {typeof(Rectangle)}", node);
+				throw new BuildException(BuildExceptionCode.Conversion, node, null, value, typeof(Rectangle));
 
 			hasX = (xywh.Length == 2 || xywh.Length == 4) && double.TryParse(xywh [0], NumberStyles.Number, CultureInfo.InvariantCulture, out x);
 			hasY = (xywh.Length == 2 || xywh.Length == 4) && double.TryParse(xywh [1], NumberStyles.Number, CultureInfo.InvariantCulture, out y);
@@ -47,7 +50,7 @@ namespace Xamarin.Forms.Core.XamlC
 			}
 
 			if (!hasX || !hasY || !hasW || !hasH)
-				throw new XamlParseException($"Cannot convert \"{value}\" into {typeof(Rectangle)}", node);
+				throw new BuildException(BuildExceptionCode.Conversion, node, null, value, typeof(Rectangle));
 
 			return GenerateIL(x, y, w, h, module);
 		}
@@ -64,10 +67,11 @@ namespace Xamarin.Forms.Core.XamlC
 			yield return Instruction.Create(OpCodes.Ldc_R8, y);
 			yield return Instruction.Create(OpCodes.Ldc_R8, w);
 			yield return Instruction.Create(OpCodes.Ldc_R8, h);
-
-			var rectangleCtor = module.ImportReference(typeof(Rectangle)).Resolve().Methods.FirstOrDefault(md => md.IsConstructor && md.Parameters.Count == 4);
-			var rectangleCtorRef = module.ImportReference(rectangleCtor);
-			yield return Instruction.Create(OpCodes.Newobj, rectangleCtorRef);
+			yield return Instruction.Create(OpCodes.Newobj, module.ImportCtorReference(("Xamarin.Forms.Core", "Xamarin.Forms", "Rectangle"), parameterTypes: new[] {
+				("mscorlib", "System", "Double"),
+				("mscorlib", "System", "Double"),
+				("mscorlib", "System", "Double"),
+				("mscorlib", "System", "Double")}));
 		}
 	}
 }

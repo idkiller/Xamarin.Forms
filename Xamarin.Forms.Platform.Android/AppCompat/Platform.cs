@@ -3,25 +3,34 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Android.Content;
+using Android.OS;
 using Android.Views;
 using Android.Views.Animations;
-using ARelativeLayout = Android.Widget.RelativeLayout;
+using AView = Android.Views.View;
 using Xamarin.Forms.Internals;
+using System.ComponentModel;
 
 namespace Xamarin.Forms.Platform.Android.AppCompat
 {
-	internal class Platform : BindableObject, IPlatform, IPlatformLayout, INavigation, IDisposable
+	internal class Platform : BindableObject, IPlatformLayout, INavigation, IDisposable
+#pragma warning disable CS0618
+		, IPlatform
+#pragma warning restore
 	{
 		readonly Context _context;
 		readonly PlatformRenderer _renderer;
 		bool _disposed;
 		bool _navAnimationInProgress;
 		NavigationModel _navModel = new NavigationModel();
+		NavigationModel _previousNavModel = null;
+
+		internal static string PackageName { get; private set; }
+		internal static string GetPackageName() => PackageName ?? Android.Platform.PackageName;
 
 		public Platform(Context context)
 		{
 			_context = context;
-
+			PackageName = context?.PackageName;
 			_renderer = new PlatformRenderer(context, this);
 
 			FormsAppCompatActivity.BackPressed += HandleBackPressed;
@@ -36,7 +45,7 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 					return;
 				_navAnimationInProgress = value;
 				if (value)
-					MessagingCenter.Send(this, CloseContextActionsSignalName);
+					MessagingCenter.Send(this, Android.Platform.CloseContextActionsSignalName);
 			}
 		}
 
@@ -50,9 +59,9 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 				return;
 			_disposed = true;
 
-			SetPage(null);
-
 			FormsAppCompatActivity.BackPressed -= HandleBackPressed;
+
+			SetPage(null);
 		}
 
 		void INavigation.InsertPageBefore(Page page, Page before)
@@ -88,7 +97,7 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 			IVisualElementRenderer modalRenderer = Android.Platform.GetRenderer(modal);
 			if (modalRenderer != null)
 			{
-				var modalContainer = modalRenderer.ViewGroup.Parent as ModalContainer;
+				var modalContainer = modalRenderer.View.Parent as ModalContainer;
 				if (animated)
 				{
 					modalContainer.Animate().TranslationY(_renderer.Height).SetInterpolator(new AccelerateInterpolator(1)).SetDuration(300).SetListener(new GenericAnimatorListener
@@ -111,6 +120,8 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 					CurrentPageController?.SendAppearing();
 				}
 			}
+
+			UpdateAccessibilityImportance(CurrentPageController as Page, ImportantForAccessibility.Auto, true);
 
 			return source.Task;
 		}
@@ -143,14 +154,21 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 		async Task INavigation.PushModalAsync(Page modal, bool animated)
 		{
 			CurrentPageController?.SendDisappearing();
+			UpdateAccessibilityImportance(CurrentPageController as Page, ImportantForAccessibility.NoHideDescendants, false);
 
 			_navModel.PushModal(modal);
 
+#pragma warning disable CS0618 // Type or member is obsolete
+			// The Platform property is no longer necessary, but we have to set it because some third-party
+			// library might still be retrieving it and using it
 			modal.Platform = this;
+#pragma warning restore CS0618 // Type or member is obsolete
 
 			Task presentModal = PresentModal(modal, animated);
 
 			await presentModal;
+
+			UpdateAccessibilityImportance(modal, ImportantForAccessibility.Auto, true);
 
 			// Verify that the modal is still on the stack
 			if (_navModel.CurrentPage == modal)
@@ -162,45 +180,63 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 			throw new InvalidOperationException("RemovePage is not supported globally on Android, please use a NavigationPage.");
 		}
 
-		SizeRequest IPlatform.GetNativeSize(VisualElement view, double widthConstraint, double heightConstraint)
+		public static SizeRequest GetNativeSize(VisualElement view, double widthConstraint, double heightConstraint)
 		{
-			Performance.Start();
+			Performance.Start(out string reference);
 
 			// FIXME: potential crash
-			IVisualElementRenderer viewRenderer = Android.Platform.GetRenderer(view);
+			IVisualElementRenderer visualElementRenderer = Android.Platform.GetRenderer(view);
+
+			var context = visualElementRenderer.View.Context;
 
 			// negative numbers have special meanings to android they don't to us
-			widthConstraint = widthConstraint <= -1 ? double.PositiveInfinity : _context.ToPixels(widthConstraint);
-			heightConstraint = heightConstraint <= -1 ? double.PositiveInfinity : _context.ToPixels(heightConstraint);
+			widthConstraint = widthConstraint <= -1 ? double.PositiveInfinity : context.ToPixels(widthConstraint);
+			heightConstraint = heightConstraint <= -1 ? double.PositiveInfinity : context.ToPixels(heightConstraint);
 
-			int width = !double.IsPositiveInfinity(widthConstraint)
+			bool widthConstrained = !double.IsPositiveInfinity(widthConstraint);
+			bool heightConstrained = !double.IsPositiveInfinity(heightConstraint);
+
+			int widthMeasureSpec = widthConstrained
 							? MeasureSpecFactory.MakeMeasureSpec((int)widthConstraint, MeasureSpecMode.AtMost)
 							: MeasureSpecFactory.MakeMeasureSpec(0, MeasureSpecMode.Unspecified);
 
-			int height = !double.IsPositiveInfinity(heightConstraint)
+			int heightMeasureSpec = heightConstrained
 							 ? MeasureSpecFactory.MakeMeasureSpec((int)heightConstraint, MeasureSpecMode.AtMost)
 							 : MeasureSpecFactory.MakeMeasureSpec(0, MeasureSpecMode.Unspecified);
 
-			SizeRequest rawResult = viewRenderer.GetDesiredSize(width, height);
+			SizeRequest rawResult = visualElementRenderer.GetDesiredSize(widthMeasureSpec, heightMeasureSpec);
 			if (rawResult.Minimum == Size.Zero)
 				rawResult.Minimum = rawResult.Request;
-			var result = new SizeRequest(new Size(_context.FromPixels(rawResult.Request.Width), _context.FromPixels(rawResult.Request.Height)),
-				new Size(_context.FromPixels(rawResult.Minimum.Width), _context.FromPixels(rawResult.Minimum.Height)));
+			var result = new SizeRequest(new Size(context.FromPixels(rawResult.Request.Width), context.FromPixels(rawResult.Request.Height)),
+				new Size(context.FromPixels(rawResult.Minimum.Width), context.FromPixels(rawResult.Minimum.Height)));
 
-			Performance.Stop();
+			if ((widthConstrained && result.Request.Width < widthConstraint)
+				|| (heightConstrained && result.Request.Height < heightConstraint))
+			{
+				// Do a final exact measurement in case the native control needs to fill the container
+				(visualElementRenderer as IViewRenderer)?.MeasureExactly();
+			}
+
+			Performance.Stop(reference);
+
 			return result;
 		}
 
 		void IPlatformLayout.OnLayout(bool changed, int l, int t, int r, int b)
 		{
+			if (Page == null)
+				return;
+
 			if (changed)
-				LayoutRootPage((FormsAppCompatActivity)_context, Page, r - l, b - t);
+			{
+				LayoutRootPage(Page, r - l, b - t);
+			}
 
 			Android.Platform.GetRenderer(Page).UpdateLayout();
 
 			for (var i = 0; i < _renderer.ChildCount; i++)
 			{
-				global::Android.Views.View child = _renderer.GetChildAt(i);
+				AView child = _renderer.GetChildAt(i);
 				if (child is ModalContainer)
 				{
 					child.Measure(MeasureSpecFactory.MakeMeasureSpec(r - l, MeasureSpecMode.Exactly), MeasureSpecFactory.MakeMeasureSpec(t - b, MeasureSpecMode.Exactly));
@@ -216,45 +252,141 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 			base.OnBindingContextChanged();
 		}
 
-		internal void SetPage(Page newRoot)
+		internal void SettingNewPage()
 		{
-			var layout = false;
 			if (Page != null)
 			{
-				_renderer.RemoveAllViews();
-
-				foreach (IVisualElementRenderer rootRenderer in _navModel.Roots.Select(Android.Platform.GetRenderer))
-					rootRenderer.Dispose();
+				_previousNavModel = _navModel;
 				_navModel = new NavigationModel();
+			}
+		}
+
+		internal void SetPage(Page newRoot)
+		{
+			if (Page == newRoot)
+			{
+				return;
+			}
+
+			if (Page != null)
+			{
+				var navModel = (_previousNavModel ?? _navModel);
+				foreach (var rootPage in navModel.Roots)
+				{
+					if (Android.Platform.GetRenderer(rootPage) is ILifeCycleState nr)
+						nr.MarkedForDispose = true;
+				}
+
+				var viewsToRemove = new List<AView>();
+				var renderersToDispose = new List<IVisualElementRenderer>();
+
+				for (int i = 0; i < _renderer.ChildCount; i++)
+					viewsToRemove.Add(_renderer.GetChildAt(i));
+
+				foreach (var root in navModel.Roots)
+					renderersToDispose.Add(Android.Platform.GetRenderer(root));
+
+				SetPageInternal(newRoot);
+
+				Cleanup(viewsToRemove, renderersToDispose);
+			}
+			else
+			{
+				SetPageInternal(newRoot);
+			}
+		}
+
+		void UpdateAccessibilityImportance(Page page, ImportantForAccessibility importantForAccessibility, bool forceFocus)
+		{
+
+			var pageRenderer = Android.Platform.GetRenderer(page);
+			if (pageRenderer?.View == null)
+				return;
+			pageRenderer.View.ImportantForAccessibility = importantForAccessibility;
+			if (forceFocus)
+				pageRenderer.View.SendAccessibilityEvent(global::Android.Views.Accessibility.EventTypes.ViewFocused);
+
+		}
+
+		void SetPageInternal(Page newRoot)
+		{
+			var layout = false;
+
+			if (Page != null)
+			{
+				// if _previousNavModel has been set than _navModel has already been reinitialized
+				if (_previousNavModel != null)
+				{
+					_previousNavModel = null;
+					if (_navModel == null)
+						_navModel = new NavigationModel();
+				}
+				else
+					_navModel = new NavigationModel();
 
 				layout = true;
 			}
 
 			if (newRoot == null)
+			{
+				Page = null;
+
 				return;
+			}
 
 			_navModel.Push(newRoot, null);
 
 			Page = newRoot;
-			Page.Platform = this;
+
 			AddChild(Page, layout);
 
 			Application.Current.NavigationProxy.Inner = this;
 		}
 
+		void Cleanup(List<AView> viewsToRemove, List<IVisualElementRenderer> renderersToDispose)
+		{
+			// If trigger by dispose, cleanup now, otherwise queue it for later
+			if (_disposed)
+			{
+				DoCleanup();
+			}
+			else
+			{
+				new Handler(Looper.MainLooper).Post(DoCleanup);
+			}
+
+			void DoCleanup()
+			{
+				for (int i = 0; i < viewsToRemove.Count; i++)
+				{
+					AView view = viewsToRemove[i];
+					_renderer?.RemoveView(view);
+				}
+
+				for (int i = 0; i < renderersToDispose.Count; i++)
+				{
+					IVisualElementRenderer rootRenderer = renderersToDispose[i];
+					rootRenderer?.Element.ClearValue(Android.Platform.RendererProperty);
+					rootRenderer?.Dispose();
+				}
+			}
+		}
+
 		void AddChild(Page page, bool layout = false)
 		{
+			if (page == null)
+				return;
+
 			if (Android.Platform.GetRenderer(page) != null)
 				return;
 
-			Android.Platform.SetPageContext(page, _context);
-			IVisualElementRenderer renderView = Android.Platform.CreateRenderer(page);
+			IVisualElementRenderer renderView = Android.Platform.CreateRenderer(page, _context);
 			Android.Platform.SetRenderer(page, renderView);
 
 			if (layout)
-				LayoutRootPage((FormsAppCompatActivity)_context, page, _renderer.Width, _renderer.Height);
+				LayoutRootPage(page, _renderer.Width, _renderer.Height);
 
-			_renderer.AddView(renderView.ViewGroup);
+			_renderer.AddView(renderView.View);
 		}
 
 		bool HandleBackPressed(object sender, EventArgs e)
@@ -262,23 +394,15 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 			if (NavAnimationInProgress)
 				return true;
 
-			Page root = _navModel.Roots.Last();
-			bool handled = root.SendBackButtonPressed();
+			Page root = _navModel.Roots.LastOrDefault();
+			bool handled = root?.SendBackButtonPressed() ?? false;
 
 			return handled;
 		}
 
-		internal static void LayoutRootPage(FormsAppCompatActivity activity, Page page, int width, int height)
+		void LayoutRootPage(Page page, int width, int height)
 		{
-			int statusBarHeight = Forms.IsLollipopOrNewer ? activity.GetStatusBarHeight() : 0;
-			statusBarHeight = activity.Window.Attributes.Flags.HasFlag(WindowManagerFlags.Fullscreen) || Forms.TitleBarVisibility == AndroidTitleBarVisibility.Never ? 0 : statusBarHeight;
-
-			if (page is MasterDetailPage)
-				page.Layout(new Rectangle(0, 0, activity.FromPixels(width), activity.FromPixels(height)));
-			else
-			{
-				page.Layout(new Rectangle(0, activity.FromPixels(statusBarHeight), activity.FromPixels(width), activity.FromPixels(height - statusBarHeight)));
-			}
+			page.Layout(new Rectangle(0, 0, _context.FromPixels(width), _context.FromPixels(height)));
 		}
 
 		Task PresentModal(Page modal, bool animated)
@@ -297,29 +421,26 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 					OnEnd = a =>
 					{
 						source.TrySetResult(false);
-						NavAnimationInProgress = false;
 						modalContainer = null;
 					},
 					OnCancel = a =>
 					{
 						source.TrySetResult(true);
-						NavAnimationInProgress = false;
 						modalContainer = null;
 					}
 				});
 			}
 			else
 			{
-				NavAnimationInProgress = false;
 				source.TrySetResult(true);
 			}
 
-			return source.Task;
+			return source.Task.ContinueWith(task => NavAnimationInProgress = false);
 		}
 
 		sealed class ModalContainer : ViewGroup
 		{
-			global::Android.Views.View _backgroundView;
+			AView _backgroundView;
 			bool _disposed;
 			Page _modal;
 			IVisualElementRenderer _renderer;
@@ -328,28 +449,34 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 			{
 				_modal = modal;
 
-				_backgroundView = new global::Android.Views.View(context);
-				_backgroundView.SetWindowBackground();
+				_backgroundView = new AView(context);
+				UpdateBackgroundColor();
 				AddView(_backgroundView);
 
-				Android.Platform.SetPageContext(modal, context);
-				_renderer = Android.Platform.CreateRenderer(modal);
+				_renderer = Android.Platform.CreateRenderer(modal, context);
 				Android.Platform.SetRenderer(modal, _renderer);
 
-				AddView(_renderer.ViewGroup);
+				AddView(_renderer.View);
+
+				Id = Platform.GenerateViewId();
+
+				_modal.PropertyChanged += OnModalPagePropertyChanged;
 			}
 
 			protected override void Dispose(bool disposing)
 			{
-				if (disposing && !_disposed)
+				if (_disposed)
+					return;
+
+				if (disposing)
 				{
-					_disposed = true;
 					RemoveAllViews();
 					if (_renderer != null)
 					{
 						_renderer.Dispose();
 						_renderer = null;
 						_modal.ClearValue(Android.Platform.RendererProperty);
+						_modal.PropertyChanged -= OnModalPagePropertyChanged;
 						_modal = null;
 					}
 
@@ -360,27 +487,40 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 					}
 				}
 
+				_disposed = true;
 				base.Dispose(disposing);
 			}
 
 			protected override void OnLayout(bool changed, int l, int t, int r, int b)
 			{
-				var activity = (FormsAppCompatActivity)Context;
-				int statusBarHeight = Forms.IsLollipopOrNewer ? activity.GetStatusBarHeight() : 0;
 				if (changed)
 				{
-					if (_modal is MasterDetailPage)
-						_modal.Layout(new Rectangle(0, 0, activity.FromPixels(r - l), activity.FromPixels(b - t)));
-					else
-					{
-						_modal.Layout(new Rectangle(0, activity.FromPixels(statusBarHeight), activity.FromPixels(r - l), activity.FromPixels(b - t - statusBarHeight)));
-					}
-
-					_backgroundView.Layout(0, statusBarHeight, r - l, b - t);
+					_modal.Layout(new Rectangle(0, 0, Context.FromPixels(r - l), Context.FromPixels(b - t)));
+					_backgroundView.Layout(0, 0, r - l, b - t);
 				}
 
 				_renderer.UpdateLayout();
 			}
+
+			void OnModalPagePropertyChanged(object sender, PropertyChangedEventArgs e)
+			{
+				if (e.PropertyName == Page.BackgroundColorProperty.PropertyName)
+					UpdateBackgroundColor();
+			}
+
+			void UpdateBackgroundColor()
+			{
+				Color modalBkgndColor = _modal.BackgroundColor;
+				if (modalBkgndColor.IsDefault)
+					_backgroundView.SetWindowBackground();
+				else
+					_backgroundView.SetBackgroundColor(modalBkgndColor.ToAndroid());
+			}
+		}
+
+		internal static int GenerateViewId()
+		{
+			return Android.Platform.GenerateViewId();
 		}
 
 		#region Statics
@@ -390,7 +530,14 @@ namespace Xamarin.Forms.Platform.Android.AppCompat
 			return canvas._renderer;
 		}
 
-		internal const string CloseContextActionsSignalName = "Xamarin.CloseContextActions";
+		#endregion
+
+		#region Obsolete 
+
+		SizeRequest IPlatform.GetNativeSize(VisualElement view, double widthConstraint, double heightConstraint)
+		{
+			return GetNativeSize(view, widthConstraint, heightConstraint);
+		}
 
 		#endregion
 	}

@@ -8,8 +8,11 @@ using Xamarin.UITest;
 using NUnit.Framework;
 #endif
 
-namespace Xamarin.Forms.Controls
+namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Bugzilla, 39908, " Back button hit quickly results in jumbled pages")]
 	public class Bugzilla39908 : TestContentPage // or TestMasterDetailPage, etc ...
@@ -66,7 +69,14 @@ namespace Xamarin.Forms.Controls
 
 		private async void OnNewPage(object sender, EventArgs e)
 		{
-			await Navigation.PushAsync(NewPage());
+			var page = NewPage();
+			page.Disappearing += Page_Disappearing;
+			await Navigation.PushAsync(page);
+		}
+
+		private void Page_Disappearing(object sender, EventArgs e)
+		{
+			System.Diagnostics.Debug.WriteLine((sender as Page).Title + " disappeared");
 		}
 	}
 }

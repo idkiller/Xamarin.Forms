@@ -62,9 +62,9 @@ namespace Xamarin.Forms.Internals
 
 			IEnumerable source = GetItemsViewSource();
 			if (source != null)
-				ListProxy = new ListProxy(source);
+				ListProxy = new ListProxy(source, dispatcher: _itemsView.Dispatcher);
 			else
-				ListProxy = new ListProxy(new object[0]);
+				ListProxy = new ListProxy(new object[0], dispatcher: _itemsView.Dispatcher);
 		}
 
 		internal TemplatedItemsList(TemplatedItemsList<TView, TItem> parent, IEnumerable itemSource, TView itemsView, BindableProperty itemTemplateProperty, int windowSize = int.MaxValue)
@@ -82,11 +82,11 @@ namespace Xamarin.Forms.Internals
 
 			if (itemSource != null)
 			{
-				ListProxy = new ListProxy(itemSource, windowSize);
+				ListProxy = new ListProxy(itemSource, windowSize, _itemsView.Dispatcher);
 				ListProxy.CollectionChanged += OnProxyCollectionChanged;
 			}
 			else
-				ListProxy = new ListProxy(new object[0]);
+				ListProxy = new ListProxy(new object[0], dispatcher: _itemsView.Dispatcher);
 		}
 
 		event PropertyChangedEventHandler ITemplatedItemsList<TItem>.PropertyChanged
@@ -523,13 +523,26 @@ namespace Xamarin.Forms.Internals
 			return GetIndex(item);
 		}
 
-		public TItem CreateContent(int index, object item, bool insert = false)
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public DataTemplate SelectDataTemplate(object item)
+		{
+			return ItemTemplate.SelectDataTemplate(item, _itemsView);
+		}
+
+		public TItem ActivateContent(int index, object item)
 		{
 			TItem content = ItemTemplate != null ? (TItem)ItemTemplate.CreateContent(item, _itemsView) : _itemsView.CreateDefault(item);
 
 			content = UpdateContent(content, index, item);
 
-			if (CachingStrategy == ListViewCachingStrategy.RecycleElement)
+			return content;
+		}
+
+		public TItem CreateContent(int index, object item, bool insert = false)
+		{
+			var content = ActivateContent(index, item);
+
+			if ((CachingStrategy & ListViewCachingStrategy.RecycleElement) != 0)
 				return content;
 
 			for (int i = _templatedObjects.Count; i <= index; i++)
@@ -797,7 +810,7 @@ namespace Xamarin.Forms.Internals
 					oldItems = new List<TemplatedItemsList<TView, TItem>>(e.OldItems.Count);
 					for (var i = 0; i < e.OldItems.Count; i++)
 					{
-						int index = e.OldStartingIndex + i;
+						int index = e.OldStartingIndex;
 						TemplatedItemsList<TView, TItem> til = _groupedItems[index];
 						til.CollectionChanged -= OnInnerCollectionChanged;
 						oldItems.Add(til);
@@ -891,7 +904,7 @@ namespace Xamarin.Forms.Internals
 
 		void OnGroupingEnabledChanged()
 		{
-			if (CachingStrategy == ListViewCachingStrategy.RecycleElement)
+			if ((CachingStrategy & ListViewCachingStrategy.RecycleElement) != 0)
 				_templatedObjects.Clear();
 
 			OnItemsSourceChanged(true);
@@ -916,11 +929,7 @@ namespace Xamarin.Forms.Internals
 		}
 
 		void OnInnerCollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
-		{
-			NotifyCollectionChangedEventHandler handler = GroupedCollectionChanged;
-			if (handler != null)
-				handler(sender, e);
-		}
+			=> GroupedCollectionChanged?.Invoke(sender, e);
 
 		void OnItemsSourceChanged(bool fromGrouping = false)
 		{
@@ -928,9 +937,9 @@ namespace Xamarin.Forms.Internals
 
 			IEnumerable itemSource = GetItemsViewSource();
 			if (itemSource == null)
-				ListProxy = new ListProxy(new object[0]);
+				ListProxy = new ListProxy(new object[0], dispatcher: _itemsView.Dispatcher);
 			else
-				ListProxy = new ListProxy(itemSource);
+				ListProxy = new ListProxy(itemSource, dispatcher: _itemsView.Dispatcher);
 
 			ListProxy.CollectionChanged += OnProxyCollectionChanged;
 			OnProxyCollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
@@ -952,28 +961,15 @@ namespace Xamarin.Forms.Internals
 
 		void OnProxyCollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
 		{
-			OnProxyCollectionChanged(sender, e, true);
-		}
-
-		void OnProxyCollectionChanged(object sender, NotifyCollectionChangedEventArgs e, bool fixWindows = true)
-		{
 			if (IsGroupingEnabled)
 			{
 				OnCollectionChangedGrouped(e);
 				return;
 			}
 
-			if (CachingStrategy == ListViewCachingStrategy.RecycleElement)
+			if ((CachingStrategy & ListViewCachingStrategy.RecycleElement) != 0)
 			{
 				OnCollectionChanged(e);
-				return;
-			}
-
-			/* HACKAHACKHACK: LongListSelector on WP SL has a bug in that it completely fails to deal with
-			 * INCC notifications that include more than 1 item. */
-			if (fixWindows && Device.RuntimePlatform == Device.WinPhone)
-			{
-				SplitCollectionChangedItems(e);
 				return;
 			}
 
@@ -1157,7 +1153,7 @@ namespace Xamarin.Forms.Internals
 						goto default;
 
 					for (var i = 0; i < e.NewItems.Count; i++)
-						OnProxyCollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, e.NewItems[i], e.NewStartingIndex + i), false);
+						OnProxyCollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, e.NewItems[i], e.NewStartingIndex + i));
 
 					break;
 
@@ -1166,7 +1162,7 @@ namespace Xamarin.Forms.Internals
 						goto default;
 
 					for (var i = 0; i < e.OldItems.Count; i++)
-						OnProxyCollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Remove, e.OldItems[i], e.OldStartingIndex + i), false);
+						OnProxyCollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Remove, e.OldItems[i], e.OldStartingIndex + i));
 
 					break;
 
@@ -1175,12 +1171,12 @@ namespace Xamarin.Forms.Internals
 						goto default;
 
 					for (var i = 0; i < e.OldItems.Count; i++)
-						OnProxyCollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Replace, e.NewItems[i], e.OldItems[i], e.OldStartingIndex + i), false);
+						OnProxyCollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Replace, e.NewItems[i], e.OldItems[i], e.OldStartingIndex + i));
 
 					break;
 
 				default:
-					OnProxyCollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset), false);
+					OnProxyCollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
 					break;
 			}
 		}

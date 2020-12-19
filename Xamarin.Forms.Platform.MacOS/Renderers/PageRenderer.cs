@@ -1,6 +1,7 @@
 ﻿using System;
 using System.ComponentModel;
 using AppKit;
+using Xamarin.Forms.PlatformConfiguration.macOSSpecific;
 
 namespace Xamarin.Forms.Platform.MacOS
 {
@@ -13,7 +14,7 @@ namespace Xamarin.Forms.Platform.MacOS
 		VisualElementPackager _packager;
 		VisualElementTracker _tracker;
 
-		IPageController PageController => Element as IPageController;
+		Page Page => Element as Page;
 
 		public PageRenderer()
 		{
@@ -44,7 +45,7 @@ namespace Xamarin.Forms.Platform.MacOS
 			Element = element;
 			UpdateTitle();
 
-			OnElementChanged(new VisualElementChangedEventArgs(oldElement, element));
+			RaiseElementChanged(new VisualElementChangedEventArgs(oldElement, element));
 
 			if (Element != null && !string.IsNullOrEmpty(Element.AutomationId))
 				SetAutomationId(Element.AutomationId);
@@ -67,7 +68,8 @@ namespace Xamarin.Forms.Platform.MacOS
 				return;
 
 			_appeared = true;
-			PageController.SendAppearing();
+			UpdateTabOrder();
+			Page.SendAppearing();
 		}
 
 		public override void ViewDidDisappear()
@@ -78,7 +80,7 @@ namespace Xamarin.Forms.Platform.MacOS
 				return;
 
 			_appeared = false;
-			PageController.SendDisappearing();
+			Page.SendDisappearing();
 		}
 
 		public override void ViewWillAppear()
@@ -91,10 +93,10 @@ namespace Xamarin.Forms.Platform.MacOS
 		{
 			if (disposing && !_disposed)
 			{
-				Element.PropertyChanged -= OnHandlePropertyChanged;
+				Element.PropertyChanged -= OnElementPropertyChanged;
 				Platform.SetRenderer(Element, null);
 				if (_appeared)
-					PageController.SendDisappearing();
+					Page.SendDisappearing();
 
 				_appeared = false;
 
@@ -123,9 +125,14 @@ namespace Xamarin.Forms.Platform.MacOS
 			base.Dispose(disposing);
 		}
 
-		void OnElementChanged(VisualElementChangedEventArgs e)
+		void RaiseElementChanged(VisualElementChangedEventArgs e)
 		{
+			OnElementChanged(e);
 			ElementChanged?.Invoke(this, e);
+		}
+
+		protected virtual void OnElementChanged(VisualElementChangedEventArgs e)
+		{
 		}
 
 		void SetAutomationId(string id)
@@ -143,7 +150,7 @@ namespace Xamarin.Forms.Platform.MacOS
 			_packager = new VisualElementPackager(this);
 			_packager.Load();
 
-			Element.PropertyChanged += OnHandlePropertyChanged;
+			Element.PropertyChanged += OnElementPropertyChanged;
 			_tracker = new VisualElementTracker(this);
 
 			_events = new EventTracker(this);
@@ -151,32 +158,77 @@ namespace Xamarin.Forms.Platform.MacOS
 			_init = true;
 		}
 
-		void OnHandlePropertyChanged(object sender, PropertyChangedEventArgs e)
+		protected virtual void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
 			if (e.PropertyName == VisualElement.BackgroundColorProperty.PropertyName)
 				UpdateBackground();
-			else if (e.PropertyName == Page.BackgroundImageProperty.PropertyName)
+			else if (e.PropertyName == Page.BackgroundImageSourceProperty.PropertyName)
 				UpdateBackground();
 			else if (e.PropertyName == Page.TitleProperty.PropertyName)
 				UpdateTitle();
+			else if (e.PropertyName == PlatformConfiguration.macOSSpecific.Page.TabOrderProperty.PropertyName)
+				UpdateTabOrder();
 		}
 
 		void UpdateBackground()
 		{
-			string bgImage = ((Page)Element).BackgroundImage;
-			if (!string.IsNullOrEmpty(bgImage))
+			this.ApplyNativeImageAsync(Page.BackgroundImageSourceProperty, bgImage =>
 			{
-				View.Layer.BackgroundColor = NSColor.FromPatternImage(NSImage.ImageNamed(bgImage)).CGColor;
-				return;
-			}
-			Color bgColor = Element.BackgroundColor;
-			View.Layer.BackgroundColor = bgColor.IsDefault ? NSColor.White.CGColor : bgColor.ToCGColor();
+				if (bgImage != null)
+				{
+					View.Layer.BackgroundColor = NSColor.FromPatternImage(bgImage).CGColor;
+				}
+				else
+				{
+					Color bgColor = Element.BackgroundColor;
+					View.Layer.BackgroundColor = bgColor.IsDefault ? NSColor.White.CGColor : bgColor.ToCGColor();
+				}
+			});
 		}
 
 		void UpdateTitle()
 		{
 			if (!string.IsNullOrWhiteSpace(((Page)Element).Title))
 				Title = ((Page)Element).Title;
+		}
+
+		NSView GetNativeControl(VisualElement visualElement)
+		{
+			var nativeView = Platform.GetRenderer(visualElement)?.NativeView;
+			var subViews = nativeView?.Subviews;
+			if (subViews != null && subViews.Length > 0)
+				return subViews[0];
+
+			return nativeView;
+		}
+
+		void UpdateTabOrder()
+		{
+			var tabOrderElements = ((Page)Element).OnThisPlatform().GetTabOrder();
+			if(tabOrderElements != null && tabOrderElements.Length > 0)
+			{
+				var count = tabOrderElements.Length;
+
+				var first = GetNativeControl(tabOrderElements[0]);
+				var last = GetNativeControl(tabOrderElements[count - 1]);
+
+				if (first != null && last != null)
+				{
+					var previous = first;
+					for (int i = 1; i < count; i++)
+					{
+						var control = GetNativeControl(tabOrderElements[i]);
+						if (control != null)
+						{
+							previous.NextKeyView = control;
+							previous = control;
+						}
+					}
+
+					last.NextKeyView = first;
+					first.Window?.MakeFirstResponder(first);
+				}
+			}
 		}
 	}
 }

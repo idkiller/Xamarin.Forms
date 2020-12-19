@@ -34,17 +34,29 @@ namespace Xamarin.Forms
 		long _lastMilliseconds;
 
 		int _timer;
+		long _frames;
 
 		public Tweener(uint length)
 		{
 			Value = 0.0f;
 			Length = length;
+			Rate = 1;
+			Loop = false;
+		}
+
+		public Tweener(uint length, uint rate)
+		{
+			Value = 0.0f;
+			Length = length;
+			Rate = rate;
 			Loop = false;
 		}
 
 		public AnimatableKey Handle { get; set; }
 
 		public uint Length { get; }
+
+		public uint Rate { get; }
 
 		public bool Loop { get; set; }
 
@@ -66,16 +78,36 @@ namespace Xamarin.Forms
 			Pause();
 
 			_lastMilliseconds = 0;
+			_frames = 0;
+
+			if (!Ticker.Default.SystemEnabled)
+			{
+				FinishImmediately();
+				return;
+			}
+
 			_timer = Ticker.Default.Insert(step =>
 			{
-				long ms = step + _lastMilliseconds;
+				if (step == long.MaxValue)
+				{
+					// We're being forced to finish
+					Value = 1.0;
+				}
+				else
+				{
+					long ms = step + _lastMilliseconds;
 
-				Value = Math.Min(1.0f, ms / (double)Length);
+					Value = Math.Min(1.0f, ms / (double)Length);
 
-				_lastMilliseconds = ms;
+					_lastMilliseconds = ms;
+				}
 
-				if (ValueUpdated != null)
-					ValueUpdated(this, EventArgs.Empty);
+				long wantedFrames = (_lastMilliseconds / Rate) + 1;
+				if(wantedFrames > _frames || Value >= 1.0f)
+				{
+					ValueUpdated?.Invoke(this, EventArgs.Empty);
+				}
+				_frames = wantedFrames;
 
 				if (Value >= 1.0f)
 				{
@@ -86,8 +118,7 @@ namespace Xamarin.Forms
 						return true;
 					}
 
-					if (Finished != null)
-						Finished(this, EventArgs.Empty);
+					Finished?.Invoke(this, EventArgs.Empty);
 					Value = 0.0f;
 					_timer = 0;
 					return false;
@@ -96,12 +127,20 @@ namespace Xamarin.Forms
 			});
 		}
 
+		void FinishImmediately()
+		{
+			Value = 1.0f;
+			ValueUpdated?.Invoke(this, EventArgs.Empty);
+			Finished?.Invoke(this, EventArgs.Empty);
+			Value = 0.0f;
+			_timer = 0;
+		}
+
 		public void Stop()
 		{
 			Pause();
 			Value = 1.0f;
-			if (Finished != null)
-				Finished(this, EventArgs.Empty);
+			Finished?.Invoke(this, EventArgs.Empty);
 			Value = 0.0f;
 		}
 

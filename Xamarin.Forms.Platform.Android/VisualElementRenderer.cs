@@ -1,53 +1,81 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 using System.ComponentModel;
-using Android.Support.V4.View;
+using Android.Content;
 using Android.Views;
 using Xamarin.Forms.Internals;
 using AView = Android.Views.View;
+using Xamarin.Forms.Platform.Android.FastRenderers;
+using Android.Runtime;
+using Android.Content.Res;
+using Android.Graphics;
+#if __ANDROID_29__
+using AndroidX.Core.View;
+#else
+using Android.Support.V4.View;
+#endif
+
 
 namespace Xamarin.Forms.Platform.Android
 {
-	public abstract class VisualElementRenderer<TElement> : FormsViewGroup, IVisualElementRenderer, AView.IOnTouchListener, AView.IOnClickListener, IEffectControlProvider where TElement : VisualElement
+	public abstract class VisualElementRenderer<TElement> : FormsViewGroup, IVisualElementRenderer, IDisposedState,
+		IEffectControlProvider where TElement : VisualElement
 	{
 		readonly List<EventHandler<VisualElementChangedEventArgs>> _elementChangedHandlers = new List<EventHandler<VisualElementChangedEventArgs>>();
-
-		readonly Lazy<GestureDetector> _gestureDetector;
-		readonly PanGestureHandler _panGestureHandler;
-		readonly PinchGestureHandler _pinchGestureHandler;
-		readonly TapGestureHandler _tapGestureHandler;
-
-		NotifyCollectionChangedEventHandler _collectionChangeHandler;
 
 		VisualElementRendererFlags _flags = VisualElementRendererFlags.AutoPackage | VisualElementRendererFlags.AutoTrack;
 
 		string _defaultContentDescription;
 		bool? _defaultFocusable;
+		ImportantForAccessibility? _defaultImportantForAccessibility;
 		string _defaultHint;
-		int? _defaultLabelFor;
-		InnerGestureListener _gestureListener;
+		bool _cascadeInputTransparent = true;
+
 		VisualElementPackager _packager;
 		PropertyChangedEventHandler _propertyChangeHandler;
-		Lazy<ScaleGestureDetector> _scaleDetector;
 
-		protected VisualElementRenderer() : base(Forms.Context)
+		GestureManager _gestureManager;
+
+		protected VisualElementRenderer(Context context) : base(context)
 		{
-			_tapGestureHandler = new TapGestureHandler(() => View);
-			_panGestureHandler = new PanGestureHandler(() => View, Context.FromPixels);
-			_pinchGestureHandler = new PinchGestureHandler(() => View);
+			_gestureManager = new GestureManager(this);
+		}
 
-			_gestureDetector =
-				new Lazy<GestureDetector>(
-					() =>
-					new GestureDetector(
-						_gestureListener =
-						new InnerGestureListener(_tapGestureHandler.OnTap, _tapGestureHandler.TapGestureRecognizers, _panGestureHandler.OnPan, _panGestureHandler.OnPanStarted, _panGestureHandler.OnPanComplete)));
+		public override bool OnTouchEvent(MotionEvent e)
+		{
+			return _gestureManager.OnTouchEvent(e) || base.OnTouchEvent(e);
+		}
 
-			_scaleDetector = new Lazy<ScaleGestureDetector>(
-					() => new ScaleGestureDetector(Context, new InnerScaleListener(_pinchGestureHandler.OnPinch, _pinchGestureHandler.OnPinchStarted, _pinchGestureHandler.OnPinchEnded))
-					);
+		public override bool OnInterceptTouchEvent(MotionEvent ev)
+		{
+			if (!Enabled)
+			{
+				// If Enabled is false, prevent all the events from being dispatched to child Views
+				// and prevent them from being processed by this View as well
+				return true; // IOW, intercepted
+			}
+
+			return base.OnInterceptTouchEvent(ev);
+		}
+
+		public override bool DispatchTouchEvent(MotionEvent e)
+		{
+			if (InputTransparent && _cascadeInputTransparent)
+			{
+				// If the Element is InputTransparent, this ViewGroup will be marked InputTransparent
+				// If we're InputTransparent and our transparency should be applied to our child controls,
+				// we return false on all touch events without even bothering to send them to the child Views
+
+				return false; // IOW, not handled
+			}
+
+			return base.DispatchTouchEvent(e);
+		}
+
+		[Obsolete("This constructor is obsolete as of version 2.5. Please use VisualElementRenderer(Context) instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		protected VisualElementRenderer() : this(Forms.Context)
+		{
 		}
 
 		public TElement Element { get; private set; }
@@ -85,40 +113,6 @@ namespace Xamarin.Forms.Platform.Android
 				OnRegisterEffect(platformEffect);
 		}
 
-		void AView.IOnClickListener.OnClick(AView v)
-		{
-			_tapGestureHandler.OnSingleClick();
-		}
-
-		public override bool OnInterceptTouchEvent(MotionEvent ev)
-		{
-			if (Element.InputTransparent && Element.IsEnabled)
-				return false;
-
-			return base.OnInterceptTouchEvent(ev);
-		}
-
-		bool AView.IOnTouchListener.OnTouch(AView v, MotionEvent e)
-		{
-			var handled = false;
-			if (_pinchGestureHandler.IsPinchSupported)
-			{
-				if (!_scaleDetector.IsValueCreated)
-					ScaleGestureDetectorCompat.SetQuickScaleEnabled(_scaleDetector.Value, true);
-				handled = _scaleDetector.Value.OnTouchEvent(e);
-			}
-
-			_gestureListener?.OnTouchEvent(e);
-
-			if (_gestureDetector.IsValueCreated && _gestureDetector.Value.Handle == IntPtr.Zero)
-			{
-				// This gesture detector has already been disposed, probably because it's on a cell which is going away
-				return handled;
-			}
-
-			return _gestureDetector.Value.OnTouchEvent(e) || handled;
-		}
-
 		VisualElement IVisualElementRenderer.Element => Element;
 
 		event EventHandler<VisualElementChangedEventArgs> IVisualElementRenderer.ElementChanged
@@ -145,57 +139,105 @@ namespace Xamarin.Forms.Platform.Android
 
 		public void UpdateLayout()
 		{
-			Performance.Start();
+			Performance.Start(out string reference);
 			Tracker?.UpdateLayout();
-			Performance.Stop();
+			Performance.Stop(reference);
+		}
+
+		protected int TabIndex { get; set; } = 0;
+
+		protected bool TabStop { get; set; } = true;
+
+		protected void UpdateTabStop()
+		{
+			TabStop = Element.IsTabStop;
+			UpdateParentPageTraversalOrder();
+		}
+
+		protected void UpdateTabIndex()
+		{
+			TabIndex = Element.TabIndex;
+			UpdateParentPageTraversalOrder();
+		}
+
+		bool CheckCustomNextFocus(AView focused, FocusSearchDirection direction)
+		{
+			return direction == FocusSearchDirection.Forward && focused.NextFocusForwardId != NoId ||
+				direction == FocusSearchDirection.Down && focused.NextFocusDownId != NoId ||
+				direction == FocusSearchDirection.Left && focused.NextFocusLeftId != NoId ||
+				direction == FocusSearchDirection.Right && focused.NextFocusRightId != NoId ||
+				direction == FocusSearchDirection.Up && focused.NextFocusUpId != NoId;
+		}
+
+		public override AView FocusSearch(AView focused, [GeneratedEnum] FocusSearchDirection direction)
+		{
+			if (CheckCustomNextFocus(focused, direction))
+				return base.FocusSearch(focused, direction);
+
+			var element = Element as ITabStopElement;
+			int maxAttempts = 0;
+			var tabIndexes = element?.GetTabIndexesOnParentPage(out maxAttempts);
+			if (tabIndexes == null)
+				return base.FocusSearch(focused, direction);
+
+			// use OS default--there's no need for us to keep going if there's one or fewer tab indexes!
+			if (tabIndexes.Count <= 1)
+				return base.FocusSearch(focused, direction);
+
+			int tabIndex = element.TabIndex;
+			AView control = null;
+			int attempt = 0;
+			bool forwardDirection = !(
+				(direction & FocusSearchDirection.Backward) != 0 ||
+				(direction & FocusSearchDirection.Left) != 0 ||
+				(direction & FocusSearchDirection.Up) != 0);
+
+			do
+			{
+				element = element.FindNextElement(forwardDirection, tabIndexes, ref tabIndex);
+				var renderer = (element as VisualElement)?.GetRenderer();
+				control = (renderer as ITabStop)?.TabStop;
+			} while (!(control?.Focusable == true || ++attempt >= maxAttempts));
+
+			// when the user focuses on picker show a popup dialog
+			if (control is IPopupTrigger popupElement)
+				popupElement.ShowPopupOnFocus = true;
+
+			return control?.Focusable == true ? control : null;
 		}
 
 		public ViewGroup ViewGroup => this;
+		AView IVisualElementRenderer.View => this;
 
 		public event EventHandler<ElementChangedEventArgs<TElement>> ElementChanged;
+		public event EventHandler<PropertyChangedEventArgs> ElementPropertyChanged;
 
 		public void SetElement(TElement element)
 		{
-			if (element == null)
-				throw new ArgumentNullException(nameof(element));
-
 			TElement oldElement = Element;
-			Element = element;
+			Element = element ?? throw new ArgumentNullException(nameof(element));
 
-			Performance.Start();
+			Performance.Start(out string reference);
 
 			if (oldElement != null)
 			{
 				oldElement.PropertyChanged -= _propertyChangeHandler;
-				UnsubscribeGestureRecognizers(oldElement);
 			}
 
-			// element may be allowed to be passed as null in the future
-			if (element != null)
-			{
-				Color currentColor = oldElement != null ? oldElement.BackgroundColor : Color.Default;
-				if (element.BackgroundColor != currentColor)
-					UpdateBackgroundColor();
-			}
+			Color currentColor = oldElement?.BackgroundColor ?? Color.Default;
+
+			if (element.BackgroundColor != currentColor)
+				UpdateBackgroundColor();
 
 			if (_propertyChangeHandler == null)
 				_propertyChangeHandler = OnElementPropertyChanged;
 
 			element.PropertyChanged += _propertyChangeHandler;
-			SubscribeGestureRecognizers(element);
 
 			if (oldElement == null)
 			{
-				SetOnClickListener(this);
-				SetOnTouchListener(this);
 				SoundEffectsEnabled = false;
 			}
-
-			InputTransparent = Element.InputTransparent;
-
-			// must be updated AFTER SetOnClickListener is called
-			// SetOnClickListener implicitly calls Clickable = true
-			UpdateGestureRecognizers(true);
 
 			OnElementChanged(new ElementChangedEventArgs<TElement>(oldElement, element));
 
@@ -205,18 +247,25 @@ namespace Xamarin.Forms.Platform.Android
 			if (AutoTrack && Tracker == null)
 				SetTracker(new VisualElementTracker(this));
 
+			if (oldElement != null)
+				Tracker?.UpdateLayout();
+
 			if (element != null)
 				SendVisualElementInitialized(element, this);
 
 			EffectUtilities.RegisterEffectControlProvider(this, oldElement, element);
 
-			if (element != null && !string.IsNullOrEmpty(element.AutomationId))
+			if (!string.IsNullOrEmpty(element.AutomationId))
 				SetAutomationId(element.AutomationId);
 
 			SetContentDescription();
 			SetFocusable();
+			UpdateInputTransparent();
+			UpdateInputTransparentInherited();
+			UpdateTabStop();
+			UpdateTabIndex();
 
-			Performance.Stop();
+			Performance.Stop(reference);
 		}
 
 		/// <summary>
@@ -225,16 +274,27 @@ namespace Xamarin.Forms.Platform.Android
 		/// </summary>
 		protected virtual bool ManageNativeControlLifetime => true;
 
+		bool CheckFlagsForDisposed() => (_flags & VisualElementRendererFlags.Disposed) != 0;
+		bool IDisposedState.IsDisposed => CheckFlagsForDisposed();
+
 		protected override void Dispose(bool disposing)
 		{
-			if ((_flags & VisualElementRendererFlags.Disposed) != 0)
+			if (CheckFlagsForDisposed())
 				return;
+
 			_flags |= VisualElementRendererFlags.Disposed;
 
 			if (disposing)
 			{
 				SetOnClickListener(null);
 				SetOnTouchListener(null);
+
+				EffectUtilities.UnregisterEffectControlProvider(this, Element);
+
+				if (Element != null)
+				{
+					Element.PropertyChanged -= _propertyChangeHandler;
+				}
 
 				if (Tracker != null)
 				{
@@ -248,35 +308,24 @@ namespace Xamarin.Forms.Platform.Android
 					_packager = null;
 				}
 
-				if (_scaleDetector != null && _scaleDetector.IsValueCreated)
+				if (_gestureManager != null)
 				{
-					_scaleDetector.Value.Dispose();
-					_scaleDetector = null;
-				}
-
-				if (_gestureListener != null)
-				{
-					_gestureListener.Dispose();
-					_gestureListener = null;
+					_gestureManager.Dispose();
+					_gestureManager = null;
 				}
 
 				if (ManageNativeControlLifetime)
 				{
-					int count = ChildCount;
-					for (var i = 0; i < count; i++)
+					while (ChildCount > 0)
 					{
-						AView child = GetChildAt(i);
+						AView child = GetChildAt(0);
+						child.RemoveFromParent();
 						child.Dispose();
 					}
 				}
 
-				RemoveAllViews();
-
 				if (Element != null)
 				{
-					Element.PropertyChanged -= _propertyChangeHandler;
-					UnsubscribeGestureRecognizers(Element);
-
 					if (Platform.GetRenderer(Element) == this)
 						Platform.SetRenderer(Element, null);
 
@@ -287,6 +336,13 @@ namespace Xamarin.Forms.Platform.Android
 			base.Dispose(disposing);
 		}
 
+		protected override void OnConfigurationChanged(Configuration newConfig)
+		{
+			base.OnConfigurationChanged(newConfig);
+
+			Invalidate();
+		}
+
 		protected virtual Size MinimumSize()
 		{
 			return new Size();
@@ -295,24 +351,40 @@ namespace Xamarin.Forms.Platform.Android
 		protected virtual void OnElementChanged(ElementChangedEventArgs<TElement> e)
 		{
 			var args = new VisualElementChangedEventArgs(e.OldElement, e.NewElement);
-			foreach (EventHandler<VisualElementChangedEventArgs> handler in _elementChangedHandlers)
+
+			// The list of event handlers can be changed inside the handlers. (ex.: are used CompressedLayout)
+			// To avoid an exception, a copy of the handlers is called.
+			var handlers = _elementChangedHandlers.ToArray();
+			foreach (var handler in handlers)
 				handler(this, args);
 
 			ElementChanged?.Invoke(this, e);
+
+			ElevationHelper.SetElevation(this, e.NewElement);
 		}
 
 		protected virtual void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
 			if (e.PropertyName == VisualElement.BackgroundColorProperty.PropertyName)
 				UpdateBackgroundColor();
-			else if (e.PropertyName == VisualElement.InputTransparentProperty.PropertyName)
-				InputTransparent = Element.InputTransparent;
-			else if (e.PropertyName == Accessibility.HintProperty.PropertyName)
+			else if (e.PropertyName == AutomationProperties.HelpTextProperty.PropertyName)
 				SetContentDescription();
-			else if (e.PropertyName == Accessibility.NameProperty.PropertyName)
+			else if (e.PropertyName == AutomationProperties.NameProperty.PropertyName)
 				SetContentDescription();
-			else if (e.PropertyName == Accessibility.IsInAccessibleTreeProperty.PropertyName)
+			else if (e.PropertyName == AutomationProperties.IsInAccessibleTreeProperty.PropertyName)
 				SetFocusable();
+			else if (e.PropertyName == VisualElement.InputTransparentProperty.PropertyName)
+				UpdateInputTransparent();
+			else if (e.PropertyName == Xamarin.Forms.Layout.CascadeInputTransparentProperty.PropertyName)
+				UpdateInputTransparentInherited();
+			else if (e.PropertyName == VisualElement.IsTabStopProperty.PropertyName)
+				UpdateTabStop();
+			else if (e.PropertyName == VisualElement.TabIndexProperty.PropertyName)
+				UpdateTabIndex();
+			else if (e.PropertyName == nameof(Element.Parent))
+				UpdateParentPageTraversalOrder();
+
+			ElementPropertyChanged?.Invoke(this, e);
 		}
 
 		protected override void OnLayout(bool changed, int l, int t, int r, int b)
@@ -320,7 +392,18 @@ namespace Xamarin.Forms.Platform.Android
 			if (Element == null)
 				return;
 
-			ReadOnlyCollection<Element> children = ((IElementController)Element).LogicalChildren;
+			UpdateLayout(((IElementController)Element).LogicalChildren);
+		}
+
+		public override void Draw(Canvas canvas)
+		{
+			canvas.ClipShape(Context, Element);
+
+			base.Draw(canvas);
+		}
+
+		static void UpdateLayout(IEnumerable<Element> children)
+		{
 			foreach (Element element in children)
 			{
 				var visualElement = element as VisualElement;
@@ -328,8 +411,21 @@ namespace Xamarin.Forms.Platform.Android
 					continue;
 
 				IVisualElementRenderer renderer = Platform.GetRenderer(visualElement);
+				if (renderer == null && CompressedLayout.GetIsHeadless(visualElement))
+					UpdateLayout(visualElement.LogicalChildren);
+
 				renderer?.UpdateLayout();
 			}
+		}
+
+		void UpdateParentPageTraversalOrder()
+		{
+			IViewParent parentRenderer = Parent;
+			while (parentRenderer != null && !(parentRenderer is IOrderedTraversalController))
+				parentRenderer = parentRenderer.Parent;
+
+			if (parentRenderer is IOrderedTraversalController controller)
+				controller.UpdateTraversalOrder();
 		}
 
 		protected virtual void OnRegisterEffect(PlatformEffect effect)
@@ -338,64 +434,29 @@ namespace Xamarin.Forms.Platform.Android
 		}
 
 		protected virtual void SetAutomationId(string id)
-		{
-			ContentDescription = id;
-		}
+			=> AutomationPropertiesProvider.SetAutomationId(this, Element, id);
 
 		protected virtual void SetContentDescription()
-		{
-			if (Element == null)
-				return;
-
-			if (SetHint())
-				return;
-
-			if (_defaultContentDescription == null)
-				_defaultContentDescription = ContentDescription;
-
-			var elemValue = string.Join(" ", (string)Element.GetValue(Accessibility.NameProperty), (string)Element.GetValue(Accessibility.HintProperty));
-
-			if (!string.IsNullOrWhiteSpace(elemValue))
-				ContentDescription = elemValue;
-			else
-				ContentDescription = _defaultContentDescription;
-		}
+			=> AutomationPropertiesProvider.SetContentDescription(this, Element, ref _defaultContentDescription, ref _defaultHint);
 
 		protected virtual void SetFocusable()
+			=> AutomationPropertiesProvider.SetFocusable(this, Element, ref _defaultFocusable, ref _defaultImportantForAccessibility);
+
+		void UpdateInputTransparent()
 		{
-			if (Element == null)
-				return;
-
-			if (!_defaultFocusable.HasValue)
-				_defaultFocusable = Focusable;
-
-			Focusable = (bool)((bool?)Element.GetValue(Accessibility.IsInAccessibleTreeProperty) ?? _defaultFocusable);
+			InputTransparent = Element.InputTransparent;
 		}
 
-		protected virtual bool SetHint()
+		void UpdateInputTransparentInherited()
 		{
-			if (Element == null)
-				return false;
+			var layout = Element as Layout;
 
-			var textView = this as global::Android.Widget.TextView;
-			if (textView == null)
-				return false;
+			if (layout == null)
+			{
+				return;
+			}
 
-			// Let the specified Title/Placeholder take precedence, but don't set the ContentDescription (won't work anyway)
-			if (((Element as Picker)?.Title ?? (Element as Entry)?.Placeholder ?? (Element as EntryCell)?.Placeholder) != null)
-				return true;
-
-			if (_defaultHint == null)
-				_defaultHint = textView.Hint;
-
-			var elemValue = string.Join((String.IsNullOrWhiteSpace((string)(Element.GetValue(Accessibility.NameProperty))) || String.IsNullOrWhiteSpace((string)(Element.GetValue(Accessibility.HintProperty)))) ? "" : ". ", (string)Element.GetValue(Accessibility.NameProperty), (string)Element.GetValue(Accessibility.HintProperty));
-
-			if (!string.IsNullOrWhiteSpace(elemValue))
-				textView.Hint = elemValue;
-			else
-				textView.Hint = _defaultHint;
-
-			return true;
+			_cascadeInputTransparent = layout.CascadeInputTransparent;
 		}
 
 		protected void SetPackager(VisualElementPackager packager)
@@ -419,59 +480,7 @@ namespace Xamarin.Forms.Platform.Android
 			element.SendViewInitialized(nativeView);
 		}
 
-		void HandleGestureRecognizerCollectionChanged(object sender, NotifyCollectionChangedEventArgs notifyCollectionChangedEventArgs)
-		{
-			UpdateGestureRecognizers();
-		}
-
 		void IVisualElementRenderer.SetLabelFor(int? id)
-		{
-			if (_defaultLabelFor == null)
-				_defaultLabelFor = LabelFor;
-
-			LabelFor = (int)(id ?? _defaultLabelFor);
-		}
-
-		void SubscribeGestureRecognizers(VisualElement element)
-		{
-			var view = element as View;
-			if (view == null)
-				return;
-
-			if (_collectionChangeHandler == null)
-				_collectionChangeHandler = HandleGestureRecognizerCollectionChanged;
-
-			var observableCollection = (ObservableCollection<IGestureRecognizer>)view.GestureRecognizers;
-			observableCollection.CollectionChanged += _collectionChangeHandler;
-		}
-
-		void UnsubscribeGestureRecognizers(VisualElement element)
-		{
-			var view = element as View;
-			if (view == null || _collectionChangeHandler == null)
-				return;
-
-			var observableCollection = (ObservableCollection<IGestureRecognizer>)view.GestureRecognizers;
-			observableCollection.CollectionChanged -= _collectionChangeHandler;
-		}
-
-		void UpdateClickable(bool force = false)
-		{
-			var view = Element as View;
-			if (view == null)
-				return;
-
-			bool newValue = view.ShouldBeMadeClickable();
-			if (force || newValue)
-				Clickable = newValue;
-		}
-
-		void UpdateGestureRecognizers(bool forceClick = false)
-		{
-			if (View == null)
-				return;
-
-			UpdateClickable(forceClick);
-		}
+			=> ViewCompat.SetLabelFor(this, id ?? ViewCompat.GetLabelFor(this));
 	}
 }

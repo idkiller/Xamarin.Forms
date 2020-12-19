@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Reflection;
 using Xamarin.Forms.Internals;
 using Xamarin.Forms.Platform;
@@ -7,18 +8,19 @@ using Xamarin.Forms.Platform;
 namespace Xamarin.Forms
 {
 	[RenderWith(typeof(_ImageRenderer))]
-	public class Image : View, IImageController, IElementConfiguration<Image>
+	public class Image : View, IImageController, IElementConfiguration<Image>, IViewController, IImageElement
 	{
-		public static readonly BindableProperty SourceProperty = BindableProperty.Create("Source", typeof(ImageSource), typeof(Image), default(ImageSource), 
-			propertyChanging: OnSourcePropertyChanging, propertyChanged: OnSourcePropertyChanged);
+		public static readonly BindableProperty SourceProperty = ImageElement.SourceProperty;
 
-		public static readonly BindableProperty AspectProperty = BindableProperty.Create("Aspect", typeof(Aspect), typeof(Image), Aspect.AspectFit);
+		public static readonly BindableProperty AspectProperty = ImageElement.AspectProperty;
 
-		public static readonly BindableProperty IsOpaqueProperty = BindableProperty.Create("IsOpaque", typeof(bool), typeof(Image), false);
+		public static readonly BindableProperty IsOpaqueProperty = ImageElement.IsOpaqueProperty;
 
-		internal static readonly BindablePropertyKey IsLoadingPropertyKey = BindableProperty.CreateReadOnly("IsLoading", typeof(bool), typeof(Image), default(bool));
+		internal static readonly BindablePropertyKey IsLoadingPropertyKey = BindableProperty.CreateReadOnly(nameof(IsLoading), typeof(bool), typeof(Image), default(bool));
 
 		public static readonly BindableProperty IsLoadingProperty = IsLoadingPropertyKey.BindableProperty;
+
+		public static readonly BindableProperty IsAnimationPlayingProperty = ImageElement.IsAnimationPlayingProperty;
 
 		readonly Lazy<PlatformConfigurationRegistry<Image>> _platformConfigurationRegistry;
 
@@ -44,6 +46,12 @@ namespace Xamarin.Forms
 			set { SetValue(IsOpaqueProperty, value); }
 		}
 
+		public bool IsAnimationPlaying
+		{
+			get { return (bool)GetValue(IsAnimationPlayingProperty); }
+			set { SetValue(IsAnimationPlayingProperty, value); }
+		}
+
 		[TypeConverter(typeof(ImageSourceConverter))]
 		public ImageSource Source
 		{
@@ -51,116 +59,24 @@ namespace Xamarin.Forms
 			set { SetValue(SourceProperty, value); }
 		}
 
+		bool IImageController.GetLoadAsAnimation() => ImageElement.GetLoadAsAnimation(this);
+
 		protected override void OnBindingContextChanged()
 		{
-			if (Source != null)
-				SetInheritedBindingContext(Source, BindingContext);
-
+			ImageElement.OnBindingContextChanged(this, this);
 			base.OnBindingContextChanged();
 		}
 
-		[Obsolete("Use OnMeasure")]
+		[Obsolete("OnSizeRequest is obsolete as of version 2.2.0. Please use OnMeasure instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		protected override SizeRequest OnSizeRequest(double widthConstraint, double heightConstraint)
 		{
 			SizeRequest desiredSize = base.OnSizeRequest(double.PositiveInfinity, double.PositiveInfinity);
-
-			double desiredAspect = desiredSize.Request.Width / desiredSize.Request.Height;
-			double constraintAspect = widthConstraint / heightConstraint;
-
-			double desiredWidth = desiredSize.Request.Width;
-			double desiredHeight = desiredSize.Request.Height;
-
-			if (desiredWidth == 0 || desiredHeight == 0)
-				return new SizeRequest(new Size(0, 0));
-
-			double width = desiredWidth;
-			double height = desiredHeight;
-			if (constraintAspect > desiredAspect)
-			{
-				// constraint area is proportionally wider than image
-				switch (Aspect)
-				{
-					case Aspect.AspectFit:
-					case Aspect.AspectFill:
-						height = Math.Min(desiredHeight, heightConstraint);
-						width = desiredWidth * (height / desiredHeight);
-						break;
-					case Aspect.Fill:
-						width = Math.Min(desiredWidth, widthConstraint);
-						height = desiredHeight * (width / desiredWidth);
-						break;
-				}
-			}
-			else if (constraintAspect < desiredAspect)
-			{
-				// constraint area is proportionally taller than image
-				switch (Aspect)
-				{
-					case Aspect.AspectFit:
-					case Aspect.AspectFill:
-						width = Math.Min(desiredWidth, widthConstraint);
-						height = desiredHeight * (width / desiredWidth);
-						break;
-					case Aspect.Fill:
-						height = Math.Min(desiredHeight, heightConstraint);
-						width = desiredWidth * (height / desiredHeight);
-						break;
-				}
-			}
-			else
-			{
-				// constraint area is same aspect as image
-				width = Math.Min(desiredWidth, widthConstraint);
-				height = desiredHeight * (width / desiredWidth);
-			}
-
-			return new SizeRequest(new Size(width, height));
+			return ImageElement.Measure(this, desiredSize, widthConstraint, heightConstraint);
 		}
 
-		void OnSourceChanged(object sender, EventArgs eventArgs)
-		{
-			OnPropertyChanged(SourceProperty.PropertyName);
-			InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
-		}
-
-		static void OnSourcePropertyChanged(BindableObject bindable, object oldvalue, object newvalue)
-		{
-			((Image)bindable).OnSourcePropertyChanged((ImageSource)oldvalue, (ImageSource)newvalue);
-		}
-
-		void OnSourcePropertyChanged(ImageSource oldvalue, ImageSource newvalue)
-		{
-			if (newvalue != null)
-			{
-				newvalue.SourceChanged += OnSourceChanged;
-				SetInheritedBindingContext(newvalue, BindingContext);
-			}
-
-			InvalidateMeasureInternal(InvalidationTrigger.MeasureChanged);
-		}
-
-		static void OnSourcePropertyChanging(BindableObject bindable, object oldvalue, object newvalue)
-		{
-			((Image)bindable).OnSourcePropertyChanging((ImageSource)oldvalue, (ImageSource)newvalue);
-		}
-
-		async void OnSourcePropertyChanging(ImageSource oldvalue, ImageSource newvalue)
-		{
-			if (oldvalue == null)
-				return;
-			
-			oldvalue.SourceChanged -= OnSourceChanged;
-			try
-			{
-				await oldvalue.Cancel();
-			}
-			catch(ObjectDisposedException)
-			{ 
-				// Workaround bugzilla 37792 https://bugzilla.xamarin.com/show_bug.cgi?id=37792
-			}
-		}
-
-		void IImageController.SetIsLoading(bool isLoading)
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public void SetIsLoading(bool isLoading)
 		{
 			SetValue(IsLoadingPropertyKey, isLoading);
 		}
@@ -169,5 +85,10 @@ namespace Xamarin.Forms
 		{
 			return _platformConfigurationRegistry.Value.On<T>();
 		}
+
+		void IImageElement.OnImageSourceSourceChanged(object sender, EventArgs e) =>
+			ImageElement.ImageSourceSourceChanged(this, e);
+
+		void IImageElement.RaiseImageSourcePropertyChanged() => OnPropertyChanged(nameof(Source));
 	}
 }

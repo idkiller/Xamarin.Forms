@@ -15,6 +15,10 @@ using Xamarin.UITest;
 
 namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Github5000)]
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.UwpIgnore)]
+#endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Github, 2411, "ListView.ScrollTo not working in TabbedPage", PlatformAffected.Android)]
 	public class Issue2411 : TestTabbedPage
@@ -29,10 +33,10 @@ namespace Xamarin.Forms.Controls.Issues
 #if UITEST
 		[Test]
 #if __ANDROID__
-		[Ignore("Appearing event is tied to virtualization in TabbedPage for Material")]
+        [Ignore("Appearing event is tied to virtualization in TabbedPage for Material")]
 #endif
 #if __MACOS__
-		[Ignore("ScrollTo not implemented on MacOS")]
+        [Ignore("ScrollTo not implemented on MacOS")]
 #endif
 		[Issue(IssueTracker.Github, 2411, "ScrollToPosition.MakeVisible not called every time TabbedPage", PlatformAffected.Android)]
 		public void Issue2411ScrollToPositionMakeVisible()
@@ -61,7 +65,7 @@ namespace Xamarin.Forms.Controls.Issues
 		[Test]
 		[Issue(IssueTracker.Github, 2411, "ScrollToPosition.End crashing in TabbedPage", PlatformAffected.Android)]
 #if __MACOS__
-		[Ignore("ScrollTo not implemented on MacOS")]
+        [Ignore("ScrollTo not implemented on MacOS")]
 #endif
 		public void Issue2411ScrollToPositionEndCrash()
 		{
@@ -178,6 +182,7 @@ namespace Xamarin.Forms.Controls.Issues
 
 		public XamarinListViewScrollToBugPage2()
 		{
+			Padding = new Thickness(10, 50, 10, 0);
 			Title = "Crash in ScrollToPosition.End";
 
 			for (int i = 0; i < 100; i++)
@@ -237,8 +242,8 @@ namespace Xamarin.Forms.Controls.Issues
 			// that was never a public feature, it was never a valid fix for the test.
 			// https://bugzilla.xamarin.com/show_bug.cgi?id=28277
 #if !UITEST
-				if (App.IOSVersion < 9)
-					runTest = false;
+                if (App.IOSVersion < 9)
+                    runTest = false;
 #endif
 
 			if (!runTest)

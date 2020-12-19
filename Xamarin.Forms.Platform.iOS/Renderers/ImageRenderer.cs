@@ -1,11 +1,14 @@
 using System;
+using System.Drawing;
 using System.ComponentModel;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Foundation;
 using UIKit;
+using Xamarin.Forms.Internals;
 using RectangleF = CoreGraphics.CGRect;
+using PreserveAttribute = Foundation.PreserveAttribute;
 
 namespace Xamarin.Forms.Platform.iOS
 {
@@ -26,11 +29,15 @@ namespace Xamarin.Forms.Platform.iOS
 		}
 	}
 
-	public class ImageRenderer : ViewRenderer<Image, UIImageView>
+	public class ImageRenderer : ViewRenderer<Image, FormsUIImageView>, IImageVisualElementRenderer
 	{
 		bool _isDisposed;
 
-		IElementController ElementController => Element as IElementController;
+		[Preserve(Conditional = true)]
+		public ImageRenderer() : base()
+		{
+			ImageElementManager.Init(this);
+		}
 
 		protected override void Dispose(bool disposing)
 		{
@@ -42,8 +49,8 @@ namespace Xamarin.Forms.Platform.iOS
 				UIImage oldUIImage;
 				if (Control != null && (oldUIImage = Control.Image) != null)
 				{
+					ImageElementManager.Dispose(this);
 					oldUIImage.Dispose();
-					oldUIImage = null;
 				}
 			}
 
@@ -52,122 +59,122 @@ namespace Xamarin.Forms.Platform.iOS
 			base.Dispose(disposing);
 		}
 
-		protected override void OnElementChanged(ElementChangedEventArgs<Image> e)
+		protected override async void OnElementChanged(ElementChangedEventArgs<Image> e)
 		{
-			if (Control == null)
-			{
-				var imageView = new UIImageView(RectangleF.Empty);
-				imageView.ContentMode = UIViewContentMode.ScaleAspectFit;
-				imageView.ClipsToBounds = true;
-				SetNativeControl(imageView);
-			}
-
 			if (e.NewElement != null)
 			{
-				SetAspect();
-				SetImage(e.OldElement);
-				SetOpacity();
+				if (Control == null)
+				{
+					var imageView = new FormsUIImageView();
+					imageView.ContentMode = UIViewContentMode.ScaleAspectFit;
+					imageView.ClipsToBounds = true;
+					SetNativeControl(imageView);
+				}
+
+				await TrySetImage(e.OldElement as Image);
 			}
 
 			base.OnElementChanged(e);
 		}
 
-		protected override void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
+		protected override async void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
 			base.OnElementPropertyChanged(sender, e);
+
 			if (e.PropertyName == Image.SourceProperty.PropertyName)
-				SetImage();
-			else if (e.PropertyName == Image.IsOpaqueProperty.PropertyName)
-				SetOpacity();
-			else if (e.PropertyName == Image.AspectProperty.PropertyName)
-				SetAspect();
+				await TrySetImage().ConfigureAwait(false);
 		}
 
-		void SetAspect()
+		protected virtual async Task TrySetImage(Image previous = null)
 		{
-			Control.ContentMode = Element.Aspect.ToUIViewContentMode();
-		}
+			// By default we'll just catch and log any exceptions thrown by SetImage so they don't bring down
+			// the application; a custom renderer can override this method and handle exceptions from
+			// SetImage differently if it wants to
 
-		async void SetImage(Image oldElement = null)
-		{
-			var source = Element.Source;
-
-			if (oldElement != null)
+			try
 			{
-				var oldSource = oldElement.Source;
-				if (Equals(oldSource, source))
-					return;
-
-				if (oldSource is FileImageSource && source is FileImageSource && ((FileImageSource)oldSource).File == ((FileImageSource)source).File)
-					return;
-
-				Control.Image = null;
+				await SetImage(previous).ConfigureAwait(false);
 			}
-
-			IImageSourceHandler handler;
-
-			((IImageController)Element).SetIsLoading(true);
-
-			if (source != null && (handler = Internals.Registrar.Registered.GetHandler<IImageSourceHandler>(source.GetType())) != null)
+			catch (Exception ex)
 			{
-				UIImage uiimage;
-				try
-				{
-					uiimage = await handler.LoadImageAsync(source, scale: (float)UIScreen.MainScreen.Scale);
-				}
-				catch (OperationCanceledException)
-				{
-					uiimage = null;
-				}
-
-				var imageView = Control;
-				if (imageView != null)
-					imageView.Image = uiimage;
-
-				if (!_isDisposed)
-					((IVisualElementController)Element).NativeSizeChanged();
+				Log.Warning(nameof(ImageRenderer), "Error loading image: {0}", ex);
 			}
-			else
-				Control.Image = null;
-
-			if (!_isDisposed)
-				((IImageController)Element).SetIsLoading(false);
+			finally
+			{
+				((IImageController)Element)?.SetIsLoading(false);
+			}
 		}
 
-		void SetOpacity()
+		protected async Task SetImage(Image oldElement = null)
 		{
-			Control.Opaque = Element.IsOpaque;
+			await ImageElementManager.SetImage(this, Element, oldElement).ConfigureAwait(false);
 		}
+
+		void IImageVisualElementRenderer.SetImage(UIImage image) => Control.Image = image;
+
+		bool IImageVisualElementRenderer.IsDisposed => _isDisposed;
+
+		UIImageView IImageVisualElementRenderer.GetImage() => Control;
 	}
+
 
 	public interface IImageSourceHandler : IRegisterable
 	{
 		Task<UIImage> LoadImageAsync(ImageSource imagesource, CancellationToken cancelationToken = default(CancellationToken), float scale = 1);
 	}
 
-	public sealed class FileImageSourceHandler : IImageSourceHandler
+	public interface IAnimationSourceHandler : IRegisterable
 	{
+		Task<FormsCAKeyFrameAnimation> LoadImageAnimationAsync(ImageSource imagesource, CancellationToken cancelationToken = default(CancellationToken), float scale = 1);
+	}
+
+	public sealed class FileImageSourceHandler : IImageSourceHandler, IAnimationSourceHandler
+	{
+		[Preserve(Conditional = true)]
+		public FileImageSourceHandler()
+		{
+		}
+
 		public Task<UIImage> LoadImageAsync(ImageSource imagesource, CancellationToken cancelationToken = default(CancellationToken), float scale = 1f)
 		{
 			UIImage image = null;
 			var filesource = imagesource as FileImageSource;
-			if (filesource != null)
+			var file = filesource?.File;
+			if (!string.IsNullOrEmpty(file))
+				image = File.Exists(file) ? new UIImage(file) : UIImage.FromBundle(file);
+
+			if (image == null)
 			{
-				var file = filesource.File;
-				if (!string.IsNullOrEmpty(file))
-					image = File.Exists(file) ? new UIImage(file) : UIImage.FromBundle(file);
+				Log.Warning(nameof(FileImageSourceHandler), "Could not find image: {0}", imagesource);
 			}
+
 			return Task.FromResult(image);
+		}
+
+		public Task<FormsCAKeyFrameAnimation> LoadImageAnimationAsync(ImageSource imagesource, CancellationToken cancelationToken = default(CancellationToken), float scale = 1)
+		{
+			FormsCAKeyFrameAnimation animation = ImageAnimationHelper.CreateAnimationFromFileImageSource(imagesource as FileImageSource);
+			if (animation == null)
+			{
+				Log.Warning(nameof(FileImageSourceHandler), "Could not find image: {0}", imagesource);
+			}
+
+			return Task.FromResult(animation);
 		}
 	}
 
-	public sealed class StreamImagesourceHandler : IImageSourceHandler
+	public sealed class StreamImagesourceHandler : IImageSourceHandler, IAnimationSourceHandler
 	{
+		[Preserve(Conditional = true)]
+		public StreamImagesourceHandler()
+		{
+		}
+
 		public async Task<UIImage> LoadImageAsync(ImageSource imagesource, CancellationToken cancelationToken = default(CancellationToken), float scale = 1f)
 		{
 			UIImage image = null;
 			var streamsource = imagesource as StreamImageSource;
-			if (streamsource != null && streamsource.Stream != null)
+			if (streamsource?.Stream != null)
 			{
 				using (var streamImage = await ((IStreamImageSource)streamsource).GetStreamAsync(cancelationToken).ConfigureAwait(false))
 				{
@@ -175,17 +182,39 @@ namespace Xamarin.Forms.Platform.iOS
 						image = UIImage.LoadFromData(NSData.FromStream(streamImage), scale);
 				}
 			}
+
+			if (image == null)
+			{
+				Log.Warning(nameof(StreamImagesourceHandler), "Could not load image: {0}", streamsource);
+			}
+
 			return image;
+		}
+
+		public async Task<FormsCAKeyFrameAnimation> LoadImageAnimationAsync(ImageSource imagesource, CancellationToken cancelationToken = default(CancellationToken), float scale = 1)
+		{
+			FormsCAKeyFrameAnimation animation = await ImageAnimationHelper.CreateAnimationFromStreamImageSourceAsync(imagesource as StreamImageSource, cancelationToken).ConfigureAwait(false);
+			if (animation == null)
+			{
+				Log.Warning(nameof(FileImageSourceHandler), "Could not find image: {0}", imagesource);
+			}
+
+			return animation;
 		}
 	}
 
-	public sealed class ImageLoaderSourceHandler : IImageSourceHandler
+	public sealed class ImageLoaderSourceHandler : IImageSourceHandler, IAnimationSourceHandler
 	{
+		[Preserve(Conditional = true)]
+		public ImageLoaderSourceHandler()
+		{
+		}
+
 		public async Task<UIImage> LoadImageAsync(ImageSource imagesource, CancellationToken cancelationToken = default(CancellationToken), float scale = 1f)
 		{
 			UIImage image = null;
 			var imageLoader = imagesource as UriImageSource;
-			if (imageLoader != null && imageLoader.Uri != null)
+			if (imageLoader?.Uri != null)
 			{
 				using (var streamImage = await imageLoader.GetStreamAsync(cancelationToken).ConfigureAwait(false))
 				{
@@ -193,7 +222,69 @@ namespace Xamarin.Forms.Platform.iOS
 						image = UIImage.LoadFromData(NSData.FromStream(streamImage), scale);
 				}
 			}
+
+			if (image == null)
+			{
+				Log.Warning(nameof(ImageLoaderSourceHandler), "Could not load image: {0}", imageLoader);
+			}
+
 			return image;
+		}
+
+		public async Task<FormsCAKeyFrameAnimation> LoadImageAnimationAsync(ImageSource imagesource, CancellationToken cancelationToken = default(CancellationToken), float scale = 1)
+		{
+			FormsCAKeyFrameAnimation animation = await ImageAnimationHelper.CreateAnimationFromUriImageSourceAsync(imagesource as UriImageSource, cancelationToken).ConfigureAwait(false);
+			if (animation == null)
+			{
+				Log.Warning(nameof(FileImageSourceHandler), "Could not find image: {0}", imagesource);
+			}
+
+			return animation;
+		}
+	}
+
+	public sealed class FontImageSourceHandler : IImageSourceHandler
+	{
+		readonly Color _defaultColor = ColorExtensions.LabelColor.ToColor();
+
+		[Preserve(Conditional = true)]
+		public FontImageSourceHandler()
+		{
+		}
+
+		public Task<UIImage> LoadImageAsync(
+			ImageSource imagesource,
+			CancellationToken cancelationToken = default(CancellationToken),
+			float scale = 1f)
+		{
+			UIImage image = null;
+			var fontsource = imagesource as FontImageSource;
+			if (fontsource != null)
+			{
+				//This will allow lookup from the Embedded Fonts
+				var cleansedname = FontExtensions.CleanseFontName(fontsource.FontFamily);
+				var font = UIFont.FromName(cleansedname ?? string.Empty, (float)fontsource.Size) ??
+					UIFont.SystemFontOfSize((float)fontsource.Size);
+				var iconcolor = fontsource.Color.IsDefault ? _defaultColor : fontsource.Color;
+				var attString = new NSAttributedString(fontsource.Glyph, font: font, foregroundColor: iconcolor.ToUIColor());
+				var imagesize = ((NSString)fontsource.Glyph).GetSizeUsingAttributes(attString.GetUIKitAttributes(0, out _));
+				
+				UIGraphics.BeginImageContextWithOptions(imagesize, false, 0f);
+				var ctx = new NSStringDrawingContext();
+				var boundingRect = attString.GetBoundingRect(imagesize, (NSStringDrawingOptions)0, ctx);
+				attString.DrawString(new RectangleF(
+					imagesize.Width / 2 - boundingRect.Size.Width / 2,
+					imagesize.Height / 2 - boundingRect.Size.Height / 2,
+					imagesize.Width,
+					imagesize.Height));
+				image = UIGraphics.GetImageFromCurrentImageContext();
+				UIGraphics.EndImageContext();
+
+				if (image != null && iconcolor != _defaultColor)
+					image = image.ImageWithRenderingMode(UIImageRenderingMode.AlwaysOriginal);
+			}
+			return Task.FromResult(image);
+
 		}
 	}
 }

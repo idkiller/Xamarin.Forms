@@ -7,17 +7,20 @@ using System.Threading.Tasks;
 using Xamarin.Forms.CustomAttributes;
 using Xamarin.Forms.Internals;
 
-namespace Xamarin.Forms.Controls.TestCasesPages
+namespace Xamarin.Forms.Controls.Issues
 {
-	[Preserve (AllMembers=true)]
-	[Issue (IssueTracker.Github, 1895, "ListView with static BindingContext somehow leaks memory", PlatformAffected.iOS | PlatformAffected.Android)]
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Github5000)]
+#endif
+	[Preserve(AllMembers = true)]
+	[Issue(IssueTracker.Github, 1895, "ListView with static BindingContext somehow leaks memory", PlatformAffected.iOS | PlatformAffected.Android)]
 	public class Issue1895
 		: ContentPage
 	{
 		public Issue1895()
 		{
 			var button = new Button { Text = "Push weak page" };
-			button.Clicked += async (sender, args) => await Navigation.PushAsync (CreateWeakReferencedPage());
+			button.Clicked += async (sender, args) => await Navigation.PushAsync(CreateWeakReferencedPage());
 			Content = button;
 		}
 
@@ -26,9 +29,7 @@ namespace Xamarin.Forms.Controls.TestCasesPages
 
 		static Page CreateWeakReferencedPage()
 		{
-			GC.Collect();
-			GC.WaitForPendingFinalizers();
-			GC.Collect();
+			GarbageCollectionHelper.Collect();
 
 			var result = CreatePage();
 			s_pageRefs.Add(new WeakReference(result));
@@ -46,19 +47,21 @@ namespace Xamarin.Forms.Controls.TestCasesPages
 			var page = new WeakReferencedPage();
 			var contents = new StackLayout();
 
-			contents.Children.Add (new Button {
+			contents.Children.Add(new Button
+			{
 				Text = "Next Page",
 				Command = new Command(() => page.Navigation.PushAsync(CreateWeakReferencedPage()))
 			});
 
-			contents.Children.Add (new Label {
-				Text = string.Format ("References alive at time of creation: {0}", s_pageRefs.Count(p => p.IsAlive)),
+			contents.Children.Add(new Label
+			{
+				Text = string.Format("References alive at time of creation: {0}", s_pageRefs.Count(p => p.IsAlive)),
 				HorizontalOptions = LayoutOptions.CenterAndExpand
 			});
 
 			var listView = new ListView { BindingContext = s_fakeProvider };
-			listView.SetBinding (ListView.ItemsSourceProperty, "Items");
-			contents.Children.Add (listView);
+			listView.SetBinding(ListView.ItemsSourceProperty, "Items");
+			contents.Children.Add(listView);
 
 			page.Content = contents;
 			return page;
@@ -66,7 +69,7 @@ namespace Xamarin.Forms.Controls.TestCasesPages
 
 		class FakeProvider
 		{
-			public ObservableCollection<string> Items { get; private set; } 
+			public ObservableCollection<string> Items { get; private set; }
 
 			public FakeProvider()
 			{

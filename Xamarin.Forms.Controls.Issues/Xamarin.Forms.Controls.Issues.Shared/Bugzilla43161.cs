@@ -9,7 +9,9 @@ using NUnit.Framework;
 
 namespace Xamarin.Forms.Controls.Issues
 {
-
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Bugzilla, 43161, "[iOS] Setting Accessory in ViewCellRenderer breaks layout", PlatformAffected.iOS)]
 	public class Bugzilla43161 : TestContentPage
@@ -19,6 +21,7 @@ namespace Xamarin.Forms.Controls.Issues
 		const string ListView2 = "Accessory with RecycleElement";
 		const string ListView3 = "Accessory with RetainElement";
 
+		[Preserve(AllMembers = true)]
 		public class AccessoryViewCell : ViewCell
 		{
 			public AccessoryViewCell()
@@ -29,14 +32,15 @@ namespace Xamarin.Forms.Controls.Issues
 			}
 		}
 
+		[Preserve(AllMembers = true)]
 		public class AccessoryViewCellWithContextActions : AccessoryViewCell
 		{
 			public AccessoryViewCellWithContextActions()
 			{
 				var label = new Label();
 				label.SetBinding(Label.TextProperty, ".");
-				View = label; 
-				
+				View = label;
+
 				var delete = new MenuItem { Text = "Delete" };
 				ContextActions.Add(delete);
 			}

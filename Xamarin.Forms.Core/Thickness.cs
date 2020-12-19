@@ -24,7 +24,7 @@ namespace Xamarin.Forms
 			get { return Top + Bottom; }
 		}
 
-		internal bool IsDefault
+		public bool IsEmpty
 		{
 			get { return Left == 0 && Top == 0 && Right == 0 && Bottom == 0; }
 		}
@@ -87,6 +87,14 @@ namespace Xamarin.Forms
 		public static bool operator !=(Thickness left, Thickness right)
 		{
 			return !left.Equals(right);
+		}
+
+		public void Deconstruct(out double left, out double top, out double right, out double bottom)
+		{
+			left = Left;
+			top = Top;
+			right = Right;
+			bottom = Bottom;
 		}
 	}
 }

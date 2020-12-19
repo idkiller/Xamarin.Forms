@@ -10,10 +10,12 @@ namespace Xamarin.Forms.Controls
 	{
 		public ButtonGallery ()
 		{
+			//ShellAppearance.SetNavBarVisible(this, false);
+			Shell.SetSearchHandler(this, new SearchHandler() { SearchBoxVisibility = SearchBoxVisibility.Collapsible });
 			BackgroundColor = new Color (0.9);
 
 			var normal = new Button { Text = "Normal Button" };
-			normal.Effects.Add (Effect.Resolve ("XamControl.BorderEffect"));
+			normal.Effects.Add (Effect.Resolve ($"{Issues.Effects.ResolutionGroupName}.BorderEffect"));
 
 			var disabled = new Button { Text = "Disabled Button"};
 			var disabledswitch = new Switch ();
@@ -40,8 +42,6 @@ namespace Xamarin.Forms.Controls
 			case Device.Android:
 				fontName = "sans-serif-light";
 				break;
-			case Device.WinPhone:
-			case Device.WinRT:
 			case Device.UWP:
 				fontName = "Comic Sans MS";
 				break;
@@ -61,13 +61,22 @@ namespace Xamarin.Forms.Controls
 				BorderColor = Color.Black,
 				BackgroundColor = Color.Purple,
 				BorderWidth = 5,
+#pragma warning disable 0618
 				BorderRadius = 5
+#pragma warning restore
 			};
 			var timer = new Button { Text = "Timer" };
 			var busy = new Button { Text = "Toggle Busy" };
 			var alert = new Button { Text = "Alert" };
 			var alertSingle = new Button {Text = "Alert Single"};
-			var image = new Button { Text = "Image Button", Image = new FileImageSource {File = "bank.png"}, BackgroundColor = Color.Blue.WithLuminosity (.8) };
+			var image = new Button { Text = "Image Button", ImageSource = new FileImageSource {File = "bank.png"}, BackgroundColor = Color.Blue.WithLuminosity (.8) };
+			AutomationProperties.SetName(image, "Image Automation Name");
+			var gif = new Button { ImageSource = "GifOne.gif" };
+			var automation = new Button { Text = "Display Name" };
+			AutomationProperties.SetName(automation, "Automation Name");
+			var labeledBy = new Button { Text = "Labeled By" };
+			var autoLabel = new Label { Text = "Label Text" };
+			AutomationProperties.SetLabeledBy(labeledBy, autoLabel);
 
 			themedButton.Clicked += (sender, args) => themedButton.Font = Font.Default;
 
@@ -96,6 +105,7 @@ namespace Xamarin.Forms.Controls
 			borderButton.Clicked += (sender, args) => borderButton.BackgroundColor = Color.Default;
 
 			Content = new ScrollView {
+				BackgroundColor = Color.Red,
 				Content = new StackLayout {
 					Padding = new Size (20, 20),
 					Children = {
@@ -121,6 +131,10 @@ namespace Xamarin.Forms.Controls
 						alert,
 						alertSingle,
 						image,
+						gif,
+						automation,
+						autoLabel,
+						labeledBy
 					}
 				}
 			};

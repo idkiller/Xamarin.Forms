@@ -10,12 +10,22 @@ using System.ComponentModel;
 using System.Text;
 using Xamarin.Forms.CustomAttributes;
 using Xamarin.Forms.Internals;
+#if UITEST
+using Xamarin.UITest;
+using NUnit.Framework;
+using Xamarin.Forms.Core.UITests;
+#endif
 
-namespace Xamarin.Forms.Controls
+namespace Xamarin.Forms.Controls.Issues
 {
 #if APP
 	[Preserve (AllMembers = true)]
 	[Issue (IssueTracker.Github, 2357, "Webview waits to load the content until webviews on previous pages are loaded", PlatformAffected.iOS | PlatformAffected.Android)]
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Github5000)]
+	// this doesn't fail on Uwp but it leaves a browser window open and breaks later tests
+	[Category(UITestCategories.UwpIgnore)]
+#endif
 	public partial class Issue2357 : MasterDetailPage
 	{
 		public Issue2357 ()
@@ -65,7 +75,6 @@ namespace Xamarin.Forms.Controls
 					await MasterViewModel.InitializeAsync ();
 					break;
 				} catch (Exception ex) {
-					Insights.Report (ex, Insights.Severity.Error);
 					errorMessage = ex.Message;
 				}
 
@@ -157,7 +166,9 @@ namespace Xamarin.Forms.Controls
 					//if external link is clicked
 					Debug.WriteLine ("WebView_OnNavigating, DIfferent Uri, so open in Native Browser");
 					e.Cancel = true;
-					Device.OpenUri (new Uri (e.Url));    
+#pragma warning disable CS0618 // Type or member is obsolete
+					Device.OpenUri (new Uri (e.Url));
+#pragma warning restore CS0618 // Type or member is obsolete
 				}
 			}
 		}

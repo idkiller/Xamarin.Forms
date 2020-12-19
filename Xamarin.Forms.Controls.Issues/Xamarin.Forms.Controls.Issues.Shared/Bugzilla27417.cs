@@ -3,6 +3,9 @@ using Xamarin.Forms.Internals;
 
 namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Bugzilla, 27417,
 		"Button.Image behaviors differently on each platform and has extra padding even with no Text", PlatformAffected.All)]
@@ -31,7 +34,7 @@ Button 8 have the image on the right and the text on the left." };
 					new Button
 					{
 						HeightRequest = 500, // Making sure that the image still gets centered vertically even if the HeightRequest won't be honored
-						Image = "coffee.png"
+						ImageSource = "coffee.png"
 					}
 				}
 			};
@@ -53,9 +56,9 @@ Button 8 have the image on the right and the text on the left." };
 							HorizontalOptions = LayoutOptions.Center,
 							Children =
 							{
-								new Button { WidthRequest = 200, HeightRequest = 300, Image = "coffee.png" },
+								new Button { WidthRequest = 200, HeightRequest = 300, ImageSource = "coffee.png" },
 								new Button { Text = "Click Me", BackgroundColor = Color.Gray },
-								new Button { Image = "coffee.png", BackgroundColor = Color.Gray },
+								new Button { ImageSource = "coffee.png", BackgroundColor = Color.Gray },
 								CreateButton(new Button.ButtonContentLayout(Button.ButtonContentLayout.ImagePosition.Left, 10)),
 								CreateButton(new Button.ButtonContentLayout(Button.ButtonContentLayout.ImagePosition.Top, 10)),
 								CreateButton(new Button.ButtonContentLayout(Button.ButtonContentLayout.ImagePosition.Bottom, 10)),
@@ -72,7 +75,7 @@ Button 8 have the image on the right and the text on the left." };
 			return new Button
 			{
 				Text = "Click Me",
-				Image = "coffee.png",
+				ImageSource = "coffee.png",
 				ContentLayout = layout,
 				BackgroundColor = Color.Gray
 			};

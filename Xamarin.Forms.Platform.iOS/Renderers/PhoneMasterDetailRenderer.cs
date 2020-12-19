@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Linq;
 using UIKit;
+using Xamarin.Forms.Internals;
 using Xamarin.Forms.PlatformConfiguration.iOSSpecific;
 using PointF = CoreGraphics.CGPoint;
 
@@ -23,14 +24,17 @@ namespace Xamarin.Forms.Platform.iOS
 		UIGestureRecognizer _tapGesture;
 
 		VisualElementTracker _tracker;
+		bool _applyShadow;
 
-		IPageController PageController => Element as IPageController;
+		Page Page => Element as Page;
 
+
+		[Preserve(Conditional = true)]
 		public PhoneMasterDetailRenderer()
 		{
 		}
 
-		IMasterDetailPageController MasterDetailPageController => Element as IMasterDetailPageController;
+		MasterDetailPage MasterDetailPage => Element as MasterDetailPage;
 
 		bool Presented
 		{
@@ -41,12 +45,15 @@ namespace Xamarin.Forms.Platform.iOS
 					return;
 				_presented = value;
 				LayoutChildren(true);
+
 				if (value)
 					AddClickOffView();
 				else
 					RemoveClickOffView();
 
-				((IElementController)Element).SetValueFromRenderer(MasterDetailPage.IsPresentedProperty, value);
+				ToggleAccessibilityElementsHidden();
+
+				((IElementController)Element).SetValueFromRenderer(Xamarin.Forms.MasterDetailPage.IsPresentedProperty, value);
 			}
 		}
 
@@ -99,13 +106,13 @@ namespace Xamarin.Forms.Platform.iOS
 		public override void ViewDidAppear(bool animated)
 		{
 			base.ViewDidAppear(animated);
-			PageController.SendAppearing();
+			Page.SendAppearing();
 		}
 
 		public override void ViewDidDisappear(bool animated)
 		{
 			base.ViewDidDisappear(animated);
-			PageController?.SendDisappearing();
+			Page?.SendDisappearing();
 		}
 
 		public override void ViewDidLayoutSubviews()
@@ -138,11 +145,13 @@ namespace Xamarin.Forms.Platform.iOS
 			UpdateBackground();
 
 			UpdatePanGesture();
+			UpdateApplyShadow(((MasterDetailPage)Element).OnThisPlatform().GetApplyShadow());
+
 		}
 
 		public override void WillRotate(UIInterfaceOrientation toInterfaceOrientation, double duration)
 		{
-			if (!MasterDetailPageController.ShouldShowSplitMode && _presented)
+			if (!MasterDetailPage.ShouldShowSplitMode && _presented)
 				Presented = false;
 
 			base.WillRotate(toInterfaceOrientation, duration);
@@ -185,7 +194,7 @@ namespace Xamarin.Forms.Platform.iOS
 
 				EmptyContainers();
 
-				PageController.SendDisappearing();
+				Page.SendDisappearing();
 
 				_disposed = true;
 			}
@@ -217,7 +226,7 @@ namespace Xamarin.Forms.Platform.iOS
 
 		void HandleMasterPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
-			if (e.PropertyName == Page.IconProperty.PropertyName || e.PropertyName == Page.TitleProperty.PropertyName)
+			if (e.PropertyName == Page.IconImageSourceProperty.PropertyName || e.PropertyName == Page.TitleProperty.PropertyName)
 				UpdateLeftBarButton();
 		}
 
@@ -225,42 +234,68 @@ namespace Xamarin.Forms.Platform.iOS
 		{
 			if (e.PropertyName == "Master" || e.PropertyName == "Detail")
 				UpdateMasterDetailContainers();
-			else if (e.PropertyName == MasterDetailPage.IsPresentedProperty.PropertyName)
+			else if (e.PropertyName == Xamarin.Forms.MasterDetailPage.IsPresentedProperty.PropertyName)
 				Presented = ((MasterDetailPage)Element).IsPresented;
-			else if (e.PropertyName == MasterDetailPage.IsGestureEnabledProperty.PropertyName)
+			else if (e.PropertyName == Xamarin.Forms.MasterDetailPage.IsGestureEnabledProperty.PropertyName)
 				UpdatePanGesture();
 			else if (e.PropertyName == VisualElement.BackgroundColorProperty.PropertyName)
 				UpdateBackground();
-			else if (e.PropertyName == Page.BackgroundImageProperty.PropertyName)
+			else if (e.PropertyName == Page.BackgroundImageSourceProperty.PropertyName)
 				UpdateBackground();
+			else if (e.PropertyName == PlatformConfiguration.iOSSpecific.MasterDetailPage.ApplyShadowProperty.PropertyName)
+				UpdateApplyShadow(((MasterDetailPage)Element).OnThisPlatform().GetApplyShadow());
 		}
 
 		void LayoutChildren(bool animated)
 		{
 			var frame = Element.Bounds.ToRectangleF();
 			var masterFrame = frame;
+			nfloat opacity = 1;
 			masterFrame.Width = (int)(Math.Min(masterFrame.Width, masterFrame.Height) * 0.8);
+			var detailRenderer = Platform.GetRenderer(MasterDetailPage.Detail);
+			if (detailRenderer == null)
+				return;
+			var detailView = detailRenderer.ViewController.View;
+
+			var isRTL = (Element as IVisualElementController)?.EffectiveFlowDirection.IsRightToLeft() == true;
+			if (isRTL)
+			{
+				masterFrame.X = (int)(masterFrame.Width * .25);
+			}
 
 			_masterController.View.Frame = masterFrame;
 
 			var target = frame;
 			if (Presented)
+			{
 				target.X += masterFrame.Width;
+				if (_applyShadow)
+					opacity = 0.5f;
+			}
+
+			if (isRTL)
+			{
+				target.X = target.X * -1;
+			}
 
 			if (animated)
 			{
 				UIView.BeginAnimations("Flyout");
 				var view = _detailController.View;
 				view.Frame = target;
+				detailView.Layer.Opacity = (float)opacity;
 				UIView.SetAnimationCurve(UIViewAnimationCurve.EaseOut);
 				UIView.SetAnimationDuration(250);
 				UIView.CommitAnimations();
 			}
 			else
+			{
 				_detailController.View.Frame = target;
+				detailView.Layer.Opacity = (float)opacity;
+			}
 
-			MasterDetailPageController.MasterBounds = new Rectangle(0, 0, masterFrame.Width, masterFrame.Height);
-			MasterDetailPageController.DetailBounds = new Rectangle(0, 0, frame.Width, frame.Height);
+			MasterDetailPage.MasterBounds = new Rectangle(masterFrame.X, 0, masterFrame.Width, masterFrame.Height);
+			MasterDetailPage.DetailBounds = new Rectangle(0, 0, frame.Width, frame.Height);
 
 			if (Presented)
 				_clickOffView.Frame = _detailController.View.Frame;
@@ -288,12 +323,15 @@ namespace Xamarin.Forms.Platform.iOS
 
 		void UpdateBackground()
 		{
-			if (!string.IsNullOrEmpty(((Page)Element).BackgroundImage))
-				View.BackgroundColor = UIColor.FromPatternImage(UIImage.FromBundle(((Page)Element).BackgroundImage));
-			else if (Element.BackgroundColor == Color.Default)
-				View.BackgroundColor = UIColor.White;
-			else
-				View.BackgroundColor = Element.BackgroundColor.ToUIColor();
+			_ = this.ApplyNativeImageAsync(Page.BackgroundImageSourceProperty, bgImage =>
+			{
+				if (bgImage != null)
+					View.BackgroundColor = UIColor.FromPatternImage(bgImage);
+				else if (Element.BackgroundColor == Color.Default)
+					View.BackgroundColor = UIColor.White;
+				else
+					View.BackgroundColor = Element.BackgroundColor.ToUIColor();
+			});
 		}
 
 		void UpdateMasterDetailContainers()
@@ -312,13 +350,23 @@ namespace Xamarin.Forms.Platform.iOS
 
 			((MasterDetailPage)Element).Master.PropertyChanged += HandleMasterPropertyChanged;
 
-			_masterController.View.AddSubview(masterRenderer.NativeView);
+			UIView masterView = masterRenderer.NativeView;
+
+			_masterController.View.AddSubview(masterView);
 			_masterController.AddChildViewController(masterRenderer.ViewController);
 
-			_detailController.View.AddSubview(detailRenderer.NativeView);
+			UIView detailView = detailRenderer.NativeView;
+
+			_detailController.View.AddSubview(detailView);
 			_detailController.AddChildViewController(detailRenderer.ViewController);
 
 			SetNeedsStatusBarAppearanceUpdate();
+			if (Forms.RespondsToSetNeedsUpdateOfHomeIndicatorAutoHidden)
+				SetNeedsUpdateOfHomeIndicatorAutoHidden();
+
+			detailRenderer.ViewController.View.Superview.BackgroundColor = Xamarin.Forms.Color.Black.ToUIColor();
+
+			ToggleAccessibilityElementsHidden();
 		}
 
 		void UpdateLeftBarButton()
@@ -334,6 +382,11 @@ namespace Xamarin.Forms.Platform.iOS
 				NavigationRenderer.SetMasterLeftBarButton(firstPage, masterDetailPage);
 		}
 
+		void UpdateApplyShadow(bool value)
+		{
+			_applyShadow = value;
+		}
+
 		public override UIViewController ChildViewControllerForStatusBarHidden()
 		{
 			if (((MasterDetailPage)Element).Detail != null)
@@ -341,7 +394,29 @@ namespace Xamarin.Forms.Platform.iOS
 			else
 				return base.ChildViewControllerForStatusBarHidden();
 		}
-		
+
+		public override UIViewController ChildViewControllerForHomeIndicatorAutoHidden
+		{
+			get
+			{
+				if (((MasterDetailPage)Element).Detail != null)
+					return (UIViewController)Platform.GetRenderer(((MasterDetailPage)Element).Detail);
+				else
+					return base.ChildViewControllerForStatusBarHidden();
+			}
+		}
+
+		void ToggleAccessibilityElementsHidden()
+		{
+			var masterView = _masterController?.View;
+			if (masterView != null)
+				masterView.AccessibilityElementsHidden = !Presented;
+
+			var detailView = _detailController?.View;
+			if (detailView != null)
+				detailView.AccessibilityElementsHidden = Presented;
+		}
+
 		void UpdatePanGesture()
 		{
 			var model = (MasterDetailPage)Element;
@@ -358,10 +433,18 @@ namespace Xamarin.Forms.Platform.iOS
 				return;
 			}
 
-			UITouchEventArgs shouldRecieve = (g, t) => !(t.View is UISlider);
+			bool shouldReceive(UIGestureRecognizer g, UITouch t)
+			{
+				return !(t.View is UISlider) && !IsSwipeView(t.View);
+			}
+
 			var center = new PointF();
 			_panGesture = new UIPanGestureRecognizer(g =>
 			{
+				var isRTL = (Element as IVisualElementController)?.EffectiveFlowDirection.IsRightToLeft() == true;
+
+				int directionModifier = isRTL ? -1 : 1;
+
 				switch (g.State)
 				{
 					case UIGestureRecognizerState.Began:
@@ -370,12 +453,23 @@ namespace Xamarin.Forms.Platform.iOS
 					case UIGestureRecognizerState.Changed:
 						var currentPosition = g.LocationInView(g.View);
 						var motion = currentPosition.X - center.X;
+
+						motion = motion * directionModifier;
+
 						var detailView = _detailController.View;
 						var targetFrame = detailView.Frame;
 						if (Presented)
 							targetFrame.X = (nfloat)Math.Max(0, _masterController.View.Frame.Width + Math.Min(0, motion));
 						else
 							targetFrame.X = (nfloat)Math.Min(_masterController.View.Frame.Width, Math.Max(0, motion));
+
+						targetFrame.X = targetFrame.X * directionModifier;
+						if (_applyShadow)
+						{
+							var openProgress = targetFrame.X / _masterController.View.Frame.Width;
+							ApplyDetailShadow((nfloat)openProgress);
+						}
+
 						detailView.Frame = targetFrame;
 						break;
 					case UIGestureRecognizerState.Ended:
@@ -383,14 +477,14 @@ namespace Xamarin.Forms.Platform.iOS
 						var masterFrame = _masterController.View.Frame;
 						if (Presented)
 						{
-							if (detailFrame.X < masterFrame.Width * .75)
+							if (detailFrame.X * directionModifier < masterFrame.Width * .75)
 								Presented = false;
 							else
 								LayoutChildren(true);
 						}
 						else
 						{
-							if (detailFrame.X > masterFrame.Width * .25)
+							if (detailFrame.X * directionModifier > masterFrame.Width * .25)
 								Presented = true;
 							else
 								LayoutChildren(true);
@@ -398,9 +492,21 @@ namespace Xamarin.Forms.Platform.iOS
 						break;
 				}
 			});
-			_panGesture.ShouldReceiveTouch = shouldRecieve;
+			_panGesture.CancelsTouchesInView = false;
+			_panGesture.ShouldReceiveTouch = shouldReceive;
 			_panGesture.MaximumNumberOfTouches = 2;
 			View.AddGestureRecognizer(_panGesture);
+		}
+
+		bool IsSwipeView(UIView view)
+		{
+			if (view == null)
+				return false;
+
+			if (view.Superview is SwipeViewRenderer)
+				return true;
+
+			return IsSwipeView(view.Superview);
 		}
 
 		class ChildViewController : UIViewController
@@ -415,6 +521,13 @@ namespace Xamarin.Forms.Platform.iOS
 		void IEffectControlProvider.RegisterEffect(Effect effect)
 		{
 			VisualElementRenderer<VisualElement>.RegisterEffect(effect, View);
+		}
+
+		void ApplyDetailShadow(nfloat percent)
+		{
+			var detailView = Platform.GetRenderer(MasterDetailPage.Detail).ViewController.View;
+			var opacity = (nfloat)(0.5 + (0.5 * (1 - percent)));
+			detailView.Layer.Opacity = (float)opacity;
 		}
 	}
 }

@@ -4,24 +4,29 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-using System.Xml;
 using Xamarin.Forms.Internals;
+using Xamarin.Forms.Xaml.Diagnostics;
 
 namespace Xamarin.Forms
 {
-	public abstract class Element : BindableObject, IElement, INameScope, IElementController
+	public abstract partial class Element : BindableObject, IElement, INameScope, IElementController
 	{
+		public static readonly BindableProperty MenuProperty = BindableProperty.CreateAttached(nameof(Menu), typeof(Menu), typeof(Element), null);
+
+		public static Menu GetMenu(BindableObject bindable) => (Menu)bindable.GetValue(MenuProperty);
+		public static void SetMenu(BindableObject bindable, Menu menu) => bindable.SetValue(MenuProperty, menu);
+
 		internal static readonly ReadOnlyCollection<Element> EmptyChildren = new ReadOnlyCollection<Element>(new Element[0]);
 
-		public static readonly BindableProperty ClassIdProperty = BindableProperty.Create("ClassId", typeof(string), typeof(View), null);
+		public static readonly BindableProperty AutomationIdProperty = BindableProperty.Create(nameof(AutomationId), typeof(string), typeof(Element), null);
 
-		string _automationId;
+		public static readonly BindableProperty ClassIdProperty = BindableProperty.Create(nameof(ClassId), typeof(string), typeof(Element), null);
 
 		IList<BindableObject> _bindableResources;
 
 		List<Action<object, ResourcesChangedEventArgs>> _changeHandlers;
 
-		List<KeyValuePair<string, BindableProperty>> _dynamicResources;
+		Dictionary<BindableProperty, string> _dynamicResources;
 
 		IEffectControlProvider _effectControlProvider;
 
@@ -31,25 +36,25 @@ namespace Xamarin.Forms
 
 		Element _parentOverride;
 
-		IPlatform _platform;
-
 		string _styleId;
+		
 
 		public string AutomationId
 		{
-			get { return _automationId; }
+			get { return (string)GetValue(AutomationIdProperty); }
 			set
 			{
-				if (_automationId != null)
-					throw new InvalidOperationException("AutomationId may only be set one time");
-				_automationId = value;
+				if (AutomationId != null)
+					throw new InvalidOperationException($"{nameof(AutomationId)} may only be set one time.");
+
+				SetValue(AutomationIdProperty, value);
 			}
 		}
 
 		public string ClassId
 		{
-			get { return (string)GetValue(ClassIdProperty); }
-			set { SetValue(ClassIdProperty, value); }
+			get => (string)GetValue(ClassIdProperty);
+			set => SetValue(ClassIdProperty, value);
 		}
 
 		public IList<Effect> Effects
@@ -76,7 +81,8 @@ namespace Xamarin.Forms
 			}
 		}
 
-		[Obsolete("Use Parent")]
+		[Obsolete("ParentView is obsolete as of version 2.1.0. Please use Parent instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public VisualElement ParentView
 		{
 			get
@@ -108,8 +114,23 @@ namespace Xamarin.Forms
 		}
 
 		internal virtual ReadOnlyCollection<Element> LogicalChildrenInternal => EmptyChildren;
+		internal IEnumerable<Element> AllChildren
+		{
+			get
+			{
+				foreach (var child in LogicalChildrenInternal)
+					yield return child;
 
-		ReadOnlyCollection<Element> IElementController.LogicalChildren => LogicalChildrenInternal;
+				foreach (var child in ChildrenNotDrawnByThisElement)
+					yield return child;
+			}
+		}
+
+		internal virtual IEnumerable<Element> ChildrenNotDrawnByThisElement => EmptyChildren;
+
+
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public ReadOnlyCollection<Element> LogicalChildren => LogicalChildrenInternal;
 
 		internal bool Owned { get; set; }
 
@@ -133,39 +154,11 @@ namespace Xamarin.Forms
 			}
 		}
 
-		[EditorBrowsable(EditorBrowsableState.Never)]
-		public IPlatform Platform
-		{
-			get
-			{
-				if (_platform == null && RealParent != null)
-					return RealParent.Platform;
-				return _platform;
-			}
-			set
-			{
-				if (_platform == value)
-					return;
-				_platform = value;
-				if (PlatformSet != null)
-					PlatformSet(this, EventArgs.Empty);
-				foreach (Element descendant in Descendants())
-				{
-					descendant._platform = _platform;
-					if (descendant.PlatformSet != null)
-						descendant.PlatformSet(this, EventArgs.Empty);
-				}
-			}
-		}
-
 		// you're not my real dad
 		[EditorBrowsable(EditorBrowsableState.Never)]
 		public Element RealParent { get; private set; }
 
-		List<KeyValuePair<string, BindableProperty>> DynamicResources
-		{
-			get { return _dynamicResources ?? (_dynamicResources = new List<KeyValuePair<string, BindableProperty>>(4)); }
-		}
+		Dictionary<BindableProperty, string> DynamicResources => _dynamicResources ?? (_dynamicResources = new Dictionary<BindableProperty, string>());
 
 		void IElement.AddResourcesChangedListener(Action<object, ResourcesChangedEventArgs> onchanged)
 		{
@@ -184,7 +177,13 @@ namespace Xamarin.Forms
 				OnPropertyChanging();
 
 				if (RealParent != null)
+				{
 					((IElement)RealParent).RemoveResourcesChangedListener(OnParentResourcesChanged);
+
+					if(value != null && (RealParent is Layout || RealParent is IControlTemplated))
+						Log.Warning("Element", $"{this} is already a child of {RealParent}. Remove {this} from {RealParent} before adding to {value}.");
+				}
+
 				RealParent = value;
 				if (RealParent != null)
 				{
@@ -202,18 +201,15 @@ namespace Xamarin.Forms
 					SetInheritedBindingContext(this, null);
 				}
 
-				OnParentSet();
+				VisualDiagnostics.SendVisualTreeChanged(value, this);
 
-				if (RealParent != null)
-				{
-					IPlatform platform = RealParent.Platform;
-					if (platform != null)
-						Platform = platform;
-				}
+				OnParentSet();
 
 				OnPropertyChanged();
 			}
 		}
+
+		internal bool IsTemplateRoot { get; set; }
 
 		void IElement.RemoveResourcesChangedListener(Action<object, ResourcesChangedEventArgs> onchanged)
 		{
@@ -222,7 +218,8 @@ namespace Xamarin.Forms
 			_changeHandlers.Remove(onchanged);
 		}
 
-		IEffectControlProvider IElementController.EffectControlProvider
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public IEffectControlProvider EffectControlProvider
 		{
 			get { return _effectControlProvider; }
 			set
@@ -246,17 +243,21 @@ namespace Xamarin.Forms
 			}
 		}
 
-		void IElementController.SetValueFromRenderer(BindableProperty property, object value)
+		void IElementController.SetValueFromRenderer(BindableProperty property, object value) => SetValueFromRenderer(property, value);
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public void SetValueFromRenderer(BindableProperty property, object value)
 		{
 			SetValueCore(property, value);
 		}
 
-		void IElementController.SetValueFromRenderer(BindablePropertyKey property, object value)
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public void SetValueFromRenderer(BindablePropertyKey property, object value)
 		{
 			SetValueCore(property, value);
 		}
 
-		bool IElementController.EffectIsAttached(string name)
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public bool EffectIsAttached(string name)
 		{
 			foreach (var effect in Effects)
 			{
@@ -266,9 +267,9 @@ namespace Xamarin.Forms
 			return false;
 		}
 
-		object INameScope.FindByName(string name)
+		public object FindByName(string name)
 		{
-			INameScope namescope = GetNameScope();
+			var namescope = GetNameScope();
 			if (namescope == null)
 				throw new InvalidOperationException("this element is not in a namescope");
 			return namescope.FindByName(name);
@@ -276,27 +277,10 @@ namespace Xamarin.Forms
 
 		void INameScope.RegisterName(string name, object scopedElement)
 		{
-			INameScope namescope = GetNameScope();
+			var namescope = GetNameScope();
 			if (namescope == null)
 				throw new InvalidOperationException("this element is not in a namescope");
 			namescope.RegisterName(name, scopedElement);
-		}
-
-		[Obsolete]
-		void INameScope.RegisterName(string name, object scopedElement, IXmlLineInfo xmlLineInfo)
-		{
-			INameScope namescope = GetNameScope();
-			if (namescope == null)
-				throw new InvalidOperationException("this element is not in a namescope");
-			namescope.RegisterName(name, scopedElement, xmlLineInfo);
-		}
-
-		void INameScope.UnregisterName(string name)
-		{
-			INameScope namescope = GetNameScope();
-			if (namescope == null)
-				throw new InvalidOperationException("this element is not in a namescope");
-			namescope.UnregisterName(name);
 		}
 
 		public event EventHandler<ElementEventArgs> ChildAdded;
@@ -319,21 +303,10 @@ namespace Xamarin.Forms
 
 		protected override void OnBindingContextChanged()
 		{
-			var gotBindingContext = false;
-			object bc = null;
-
-			for (var index = 0; index < LogicalChildrenInternal.Count; index++)
+			this.PropagateBindingContext(LogicalChildrenInternal, (child, bc) =>
 			{
-				Element child = LogicalChildrenInternal[index];
-
-				if (!gotBindingContext)
-				{
-					bc = BindingContext;
-					gotBindingContext = true;
-				}
-
-				SetChildInheritedBindingContext(child, bc);
-			}
+				SetChildInheritedBindingContext((Element)child, bc);
+			});
 
 			if (_bindableResources != null)
 				foreach (BindableObject item in _bindableResources)
@@ -347,13 +320,10 @@ namespace Xamarin.Forms
 		protected virtual void OnChildAdded(Element child)
 		{
 			child.Parent = this;
-			if (Platform != null)
-				child.Platform = Platform;
 
-			child.ApplyBindings();
+			child.ApplyBindings(skipBindingContext: false, fromBindingContextChanged: true);
 
-			if (ChildAdded != null)
-				ChildAdded(this, new ElementEventArgs(child));
+			ChildAdded?.Invoke(this, new ElementEventArgs(child));
 
 			OnDescendantAdded(child);
 			foreach (Element element in child.Descendants())
@@ -364,8 +334,7 @@ namespace Xamarin.Forms
 		{
 			child.Parent = null;
 
-			if (ChildRemoved != null)
-				ChildRemoved(child, new ElementEventArgs(child));
+			ChildRemoved?.Invoke(child, new ElementEventArgs(child));
 
 			OnDescendantRemoved(child);
 			foreach (Element element in child.Descendants())
@@ -375,11 +344,18 @@ namespace Xamarin.Forms
 		protected virtual void OnParentSet()
 		{
 			ParentSet?.Invoke(this, EventArgs.Empty);
+			ApplyStyleSheets();
+			(this as IPropertyPropagationController)?.PropagatePropertyChanged(null);
 		}
 
 		protected override void OnPropertyChanged([CallerMemberName] string propertyName = null)
 		{
 			base.OnPropertyChanged(propertyName);
+			foreach(var logicalChildren in ChildrenNotDrawnByThisElement)
+			{
+				if(logicalChildren is IPropertyPropagationController controller)
+					PropertyPropagationExtensions.PropagatePropertyChanged(propertyName, this, new[] { logicalChildren });
+			}
 
 			if (_effects == null || _effects.Count == 0)
 				return;
@@ -409,9 +385,12 @@ namespace Xamarin.Forms
 			}
 		}
 
-		internal void OnParentResourcesChanged(object sender, ResourcesChangedEventArgs e)
+		internal virtual void OnParentResourcesChanged(object sender, ResourcesChangedEventArgs e)
 		{
-			OnParentResourcesChanged(e.Values);
+			if (e == ResourcesChangedEventArgs.StyleSheets)
+				ApplyStyleSheets();
+			else
+				OnParentResourcesChanged(e.Values);
 		}
 
 		internal virtual void OnParentResourcesChanged(IEnumerable<KeyValuePair<string, object>> values)
@@ -421,15 +400,19 @@ namespace Xamarin.Forms
 
 		internal override void OnRemoveDynamicResource(BindableProperty property)
 		{
-			DynamicResources.RemoveAll(kvp => kvp.Value == property);
+			DynamicResources.Remove(property);
+
 			if (DynamicResources.Count == 0)
 				_dynamicResources = null;
 			base.OnRemoveDynamicResource(property);
 		}
 
-		internal void OnResourcesChanged(object sender, ResourcesChangedEventArgs e)
+		internal virtual void OnResourcesChanged(object sender, ResourcesChangedEventArgs e)
 		{
-			OnResourcesChanged(e.Values);
+			if (e == ResourcesChangedEventArgs.StyleSheets)
+				ApplyStyleSheets();
+			else
+				OnResourcesChanged(e.Values);
 		}
 
 		internal void OnResourcesChanged(IEnumerable<KeyValuePair<string, object>> values)
@@ -446,12 +429,16 @@ namespace Xamarin.Forms
 			foreach (KeyValuePair<string, object> value in values)
 			{
 				List<BindableProperty> changedResources = null;
-				foreach (KeyValuePair<string, BindableProperty> dynR in DynamicResources)
+				foreach (KeyValuePair<BindableProperty, string> dynR in DynamicResources)
 				{
-					if (dynR.Key != value.Key)
+					// when the DynamicResource bound to a BindableProperty is
+					// changing then the BindableProperty needs to be refreshed;
+					// The .Value is the name of DynamicResouce to which the BindableProperty is bound.
+					// The .Key is the name of the DynamicResource whose value is changing.
+					if (dynR.Value != value.Key)
 						continue;
 					changedResources = changedResources ?? new List<BindableProperty>();
-					changedResources.Add(dynR.Value);
+					changedResources.Add(dynR.Key);
 				}
 				if (changedResources == null)
 					continue;
@@ -471,16 +458,12 @@ namespace Xamarin.Forms
 		internal override void OnSetDynamicResource(BindableProperty property, string key)
 		{
 			base.OnSetDynamicResource(property, key);
-			DynamicResources.Add(new KeyValuePair<string, BindableProperty>(key, property));
-			object value;
-			if (this.TryGetResource(key, out value))
+			DynamicResources[property] = key;
+			if (this.TryGetResource(key, out var value))
 				OnResourceChanged(property, value);
 		}
 
 		internal event EventHandler ParentSet;
-
-		[EditorBrowsable(EditorBrowsableState.Never)]
-		public event EventHandler PlatformSet;
 
 		internal virtual void SetChildInheritedBindingContext(Element child, object context)
 		{
@@ -525,7 +508,7 @@ namespace Xamarin.Forms
 		{
 			foreach (Effect effect in _effects)
 			{
-				effect.ClearEffect();
+				effect?.ClearEffect();
 			}
 		}
 
@@ -578,39 +561,69 @@ namespace Xamarin.Forms
 			}
 		}
 
-		INameScope GetNameScope()
+		internal INameScope GetNameScope()
 		{
-			INameScope namescope = NameScope.GetNameScope(this);
-			Element p = RealParent;
-			while (namescope == null && p != null)
+			var element = this;
+			do
 			{
-				namescope = NameScope.GetNameScope(p);
-				p = p.RealParent;
-			}
-			return namescope;
+				var ns = NameScope.GetNameScope(element);
+				if (ns != null)
+					return ns;
+			} while ((element = element.RealParent) != null);
+			return null;
 		}
 
 		void OnDescendantAdded(Element child)
 		{
-			if (DescendantAdded != null)
-				DescendantAdded(this, new ElementEventArgs(child));
-
-			if (RealParent != null)
-				RealParent.OnDescendantAdded(child);
+			DescendantAdded?.Invoke(this, new ElementEventArgs(child));
+			RealParent?.OnDescendantAdded(child);
 		}
 
 		void OnDescendantRemoved(Element child)
 		{
-			if (DescendantRemoved != null)
-				DescendantRemoved(this, new ElementEventArgs(child));
-
-			if (RealParent != null)
-				RealParent.OnDescendantRemoved(child);
+			DescendantRemoved?.Invoke(this, new ElementEventArgs(child));
+			RealParent?.OnDescendantRemoved(child);
 		}
 
 		void OnResourceChanged(BindableProperty property, object value)
 		{
 			SetValueCore(property, value, SetValueFlags.ClearOneWayBindings | SetValueFlags.ClearTwoWayBindings);
 		}
+
+		#region Obsolete IPlatform Stuff
+
+#pragma warning disable CS0618 // Type or member is obsolete
+		private IPlatform _platform;
+#pragma warning restore CS0618 // Type or member is obsolete
+
+		// Platform isn't needed anymore, but the Previewer will still try to set it via reflection
+		// and throw an NRE if it's not available
+		// So even if this property eventually gets removed, we still need to keep something settable on
+		// Page called Platform
+
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		[Obsolete("IPlatform is obsolete as of 3.5.0. Do not use this property.")]
+		public IPlatform Platform
+		{
+			get => _platform;
+			set
+			{
+				if (_platform == value)	
+					return;	
+				_platform = value;	
+				PlatformSet?.Invoke(this, EventArgs.Empty);	
+				foreach (Element descendant in Descendants())
+				{	
+					descendant._platform = _platform;	
+					descendant.PlatformSet?.Invoke(this, EventArgs.Empty);	
+				}
+			}
+		}
+
+		[Obsolete("PlatformSet is obsolete as of 3.5.0. Do not use this event.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public event EventHandler PlatformSet;
+
+		#endregion
 	}
 }

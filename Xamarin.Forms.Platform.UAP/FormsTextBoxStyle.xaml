@@ -8,16 +8,17 @@
 		<Setter Property="MinWidth" Value="{ThemeResource TextControlThemeMinWidth}" />
 		<Setter Property="MinHeight" Value="{ThemeResource TextControlThemeMinHeight}" />
 		<Setter Property="Foreground" Value="{ThemeResource SystemControlForegroundBaseHighBrush}" />
-		<Setter Property="ForegroundFocusBrush" Value="{ThemeResource SystemControlForegroundChromeBlackHighBrush}" />
+        <Setter Property="ForegroundFocusBrush" Value="{ThemeResource SystemColorWindowTextColor}" />
 		<Setter Property="PlaceholderForegroundBrush" Value="{ThemeResource SystemControlPageTextBaseMediumBrush}" />
 		<Setter Property="PlaceholderForegroundFocusBrush" Value="{ThemeResource SystemControlPageTextChromeBlackMediumLowBrush}" />
 		<Setter Property="Background" Value="{ThemeResource SystemControlBackgroundAltHighBrush}" />
-		<Setter Property="BackgroundFocusBrush" Value="{ThemeResource SystemControlBackgroundChromeWhiteBrush}" />
+        <Setter Property="BackgroundFocusBrush" Value="{ThemeResource TextControlBackground}" />
 		<Setter Property="BorderBrush" Value="{ThemeResource SystemControlForegroundChromeDisabledLowBrush}" />
 		<Setter Property="SelectionHighlightColor" Value="{ThemeResource SystemControlHighlightAccentBrush}" />
 		<Setter Property="BorderThickness" Value="{ThemeResource TextControlBorderThemeThickness}" />
 		<Setter Property="FontFamily" Value="{ThemeResource ContentControlThemeFontFamily}" />
 		<Setter Property="FontSize" Value="{ThemeResource ControlContentThemeFontSize}" />
+		<Setter Property="IsSpellCheckEnabled" Value="True" />
 		<Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Hidden" />
 		<Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Hidden" />
 		<Setter Property="ScrollViewer.IsDeferredScrollingEnabled" Value="False" />
@@ -25,7 +26,7 @@
 		<Setter Property="Template">
 			<Setter.Value>
 				<ControlTemplate TargetType="uwp:FormsTextBox">
-					<Grid>
+					<Grid x:Name="RootGrid">
 						<Grid.Resources>
 							<Style x:Name="DeleteButtonStyle" TargetType="Button">
 								<Setter Property="Template">
@@ -66,7 +67,7 @@
 													</VisualStateGroup>
 												</VisualStateManager.VisualStateGroups>
 												<TextBlock x:Name="GlyphElement" AutomationProperties.AccessibilityView="Raw"
-												           Foreground="{ThemeResource SystemControlForegroundChromeBlackMediumBrush}" FontStyle="Normal"
+												           Foreground="{ThemeResource SystemControlForegroundBaseHighBrush}" FontStyle="Normal"
 												           FontSize="12" FontFamily="{ThemeResource SymbolThemeFontFamily}" HorizontalAlignment="Center"
 												           Text="&#xE10A;" VerticalAlignment="Center" />
 											</Grid>
@@ -84,6 +85,39 @@
 							<RowDefinition Height="*" />
 						</Grid.RowDefinitions>
 						<VisualStateManager.VisualStateGroups>
+
+							<VisualStateGroup x:Name="FormsManaged">
+								<!-- These "Forms" prefixed states exist to support the Forms VSM; once custom 
+								visual state managers are working correctly for TextBox, we'll be able to remove them
+								(see notes in FormsVisualStateManager.cs) -->
+								<VisualState x:Name="FormsNormal" />
+								<VisualState x:Name="FormsDisabled">
+									<Storyboard>
+										<ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Foreground"
+																		Storyboard.TargetName="HeaderContentPresenter">
+											<DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource SystemControlDisabledBaseLowBrush}" />
+										</ObjectAnimationUsingKeyFrames>
+										<ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Background"
+																		Storyboard.TargetName="BackgroundElement">
+											<DiscreteObjectKeyFrame KeyTime="0" Value="{Binding Background, RelativeSource={RelativeSource Mode=TemplatedParent}}" />
+										</ObjectAnimationUsingKeyFrames>
+										<ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Background" Storyboard.TargetName="BorderElement">
+											<DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource SystemControlBackgroundBaseLowBrush}" />
+										</ObjectAnimationUsingKeyFrames>
+										<ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="BorderBrush" Storyboard.TargetName="BorderElement">
+											<DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource SystemControlDisabledBaseLowBrush}" />
+										</ObjectAnimationUsingKeyFrames>
+										<ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Foreground" Storyboard.TargetName="ContentElement">
+											<DiscreteObjectKeyFrame KeyTime="0" Value="{Binding Foreground, RelativeSource={RelativeSource Mode=TemplatedParent}}" />
+										</ObjectAnimationUsingKeyFrames>
+										<ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Foreground"
+										                               Storyboard.TargetName="PlaceholderTextContentPresenter">
+											<DiscreteObjectKeyFrame KeyTime="0" Value="{Binding PlaceholderForegroundBrush, RelativeSource={RelativeSource Mode=TemplatedParent}}" />
+										</ObjectAnimationUsingKeyFrames>
+									</Storyboard>
+								</VisualState>
+							</VisualStateGroup>
+
 							<VisualStateGroup x:Name="CommonStates">
 								<VisualState x:Name="Disabled">
 									<Storyboard>
@@ -132,6 +166,11 @@
 											<DiscreteObjectKeyFrame KeyTime="0"
 											                        Value="{Binding BackgroundFocusBrush, RelativeSource={RelativeSource TemplatedParent}}" />
 										</ObjectAnimationUsingKeyFrames>
+										<ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Background"
+										                               Storyboard.TargetName="BorderElement">
+											<DiscreteObjectKeyFrame KeyTime="0"
+											                        Value="{Binding BackgroundFocusBrush, RelativeSource={RelativeSource TemplatedParent}}" />
+										</ObjectAnimationUsingKeyFrames>
 										<ObjectAnimationUsingKeyFrames Storyboard.TargetProperty="Opacity" Storyboard.TargetName="BackgroundElement">
 											<DiscreteObjectKeyFrame KeyTime="0" Value="{ThemeResource TextControlBackgroundFocusedOpacity}" />
 										</ObjectAnimationUsingKeyFrames>
@@ -173,7 +212,7 @@
 						                  Foreground="{ThemeResource SystemControlForegroundBaseHighBrush}" FontWeight="Normal"
 						                  Margin="0,0,0,8" Grid.Row="0" Visibility="Collapsed" x:DeferLoadStrategy="Lazy" />
 						<ScrollViewer x:Name="ContentElement" AutomationProperties.AccessibilityView="Raw"
-                                      Foreground="{TemplateBinding ForegroundFocusBrush}"
+                                     
 						              HorizontalScrollMode="{TemplateBinding ScrollViewer.HorizontalScrollMode}"
 						              HorizontalScrollBarVisibility="{TemplateBinding ScrollViewer.HorizontalScrollBarVisibility}"
 						              IsTabStop="False" IsHorizontalRailEnabled="{TemplateBinding ScrollViewer.IsHorizontalRailEnabled}"
@@ -181,7 +220,8 @@
 						              IsDeferredScrollingEnabled="{TemplateBinding ScrollViewer.IsDeferredScrollingEnabled}"
 						              Margin="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}" Grid.Row="1"
 						              VerticalScrollBarVisibility="{TemplateBinding ScrollViewer.VerticalScrollBarVisibility}"
-						              VerticalScrollMode="{TemplateBinding ScrollViewer.VerticalScrollMode}" ZoomMode="Disabled" />
+						              VerticalScrollMode="{TemplateBinding ScrollViewer.VerticalScrollMode}" ZoomMode="Disabled"
+                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
 						<ContentControl x:Name="PlaceholderTextContentPresenter" Grid.ColumnSpan="2"
 						                Content="{TemplateBinding PlaceholderText}"
 						                Foreground="{TemplateBinding PlaceholderForegroundBrush}" IsHitTestVisible="False"
@@ -189,7 +229,8 @@
 						                Grid.Row="1"
 						                HorizontalAlignment="{Binding TextAlignment, 
                                             RelativeSource={RelativeSource Mode=TemplatedParent}, 
-                                            Converter={StaticResource AlignmentConverter}}" />
+                                            Converter={StaticResource AlignmentConverter}}" 
+                                        VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
 						<Button x:Name="DeleteButton" BorderThickness="{TemplateBinding BorderThickness}" Grid.Column="1"
 						        FontSize="{TemplateBinding FontSize}" IsTabStop="False" Margin="{ThemeResource HelperButtonThemePadding}"
 						        MinWidth="34" Grid.Row="1" Style="{StaticResource DeleteButtonStyle}" Visibility="Collapsed"

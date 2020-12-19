@@ -4,49 +4,41 @@ using System;
 using System.Globalization;
 using Windows.Foundation;
 using Windows.Graphics.Display;
+using Windows.System;
+using Windows.UI.Core;
 using Windows.UI.ViewManagement;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Media;
 using Xamarin.Forms;
-using Xamarin.Forms.ControlGallery.WindowsUniversal;
 using Xamarin.Forms.Controls;
 using Xamarin.Forms.Platform.UWP;
+using WRectangleGeometry = Windows.UI.Xaml.Media.RectangleGeometry;
+using WRect = Windows.Foundation.Rect;
 
-[assembly: ExportEffect(typeof(BorderEffect), "BorderEffect")]
 namespace Xamarin.Forms.ControlGallery.WindowsUniversal
 {
-	public class BorderEffect : PlatformEffect
-	{
-		protected override void OnAttached()
-		{
-			var control = Control as Control;
-			if (control == null)
-				return;
-
-			control.Background = new SolidColorBrush(Windows.UI.Colors.Aqua);
-		}
-
-		protected override void OnDetached()
-		{
-			var control = Control as Control;
-			if (control == null)
-				return;
-
-			control.Background = new SolidColorBrush(Windows.UI.Colors.Beige);
-		}
-	}
-
 	/// <summary>
 	/// An empty page that can be used on its own or navigated to within a Frame.
 	/// </summary>
 	public sealed partial class MainPage
 	{
+		Controls.App _app;
+
 		public MainPage()
 		{
 			InitializeComponent();
 
-			var app = new Controls.App();
+			// some tests need to window to be large enough to click on things
+			// can we make this only open to window size for UI Tests?
+			//var bounds = ApplicationView.GetForCurrentView().VisibleBounds;
+			//var scaleFactor = DisplayInformation.GetForCurrentView().RawPixelsPerViewPixel;
+			//var size = new Windows.Foundation.Size(bounds.Width * scaleFactor, bounds.Height * scaleFactor);
+			//ApplicationView.PreferredLaunchViewSize = size;
+			//ApplicationView.PreferredLaunchWindowingMode = ApplicationViewWindowingMode.PreferredLaunchViewSize;
+
+
+			_app = new Controls.App();
 
 			// When the native control gallery loads up, it'll let us know so we can add the nested native controls
 			MessagingCenter.Subscribe<NestedNativeControlGalleryPage>(this, NestedNativeControlGalleryPage.ReadyForNativeControlsMessage, AddNativeControls);
@@ -54,7 +46,23 @@ namespace Xamarin.Forms.ControlGallery.WindowsUniversal
 			// When the native binding gallery loads up, it'll let us know so we can set up the native bindings
 			MessagingCenter.Subscribe<NativeBindingGalleryPage>(this, NativeBindingGalleryPage.ReadyForNativeBindingsMessage, AddNativeBindings);
 
-			LoadApplication(app);
+			LoadApplication(_app);
+
+			CoreWindow.GetForCurrentThread().KeyDown += OnKeyDown;
+
+		}
+
+		void OnKeyDown(CoreWindow coreWindow, KeyEventArgs args)
+		{
+			if (args.VirtualKey == VirtualKey.Escape)
+			{
+				_app.Reset();
+				args.Handled = true;
+			}
+			else if (args.VirtualKey == VirtualKey.F1)
+			{
+				_app.PlatformTest();
+			}
 		}
 
 		void AddNativeControls(NestedNativeControlGalleryPage page)
@@ -110,17 +118,17 @@ namespace Xamarin.Forms.ControlGallery.WindowsUniversal
 
 					// The broken control always tries to size itself to the screen width
 					// So figure that out and we'll know how far off it's laying itself out
-					Rect bounds = ApplicationView.GetForCurrentView().VisibleBounds;
+					WRect bounds = ApplicationView.GetForCurrentView().VisibleBounds;
 					double scaleFactor = DisplayInformation.GetForCurrentView().RawPixelsPerViewPixel;
 					var screenWidth = new Size(bounds.Width * scaleFactor, bounds.Height * scaleFactor);
 
 					// We can re-center it by offsetting it during the Arrange call
 					double diff = Math.Abs(screenWidth.Width - finalSize.Width) / -2;
-					frameworkElement.Arrange(new Rect(diff, 0, finalSize.Width - diff, finalSize.Height));
+					frameworkElement.Arrange(new WRect(diff, 0, finalSize.Width - diff, finalSize.Height));
 
 					// Arranging the control to the left will make it show up past the edge of the stack layout
 					// We can fix that by clipping it manually
-					var clip = new RectangleGeometry { Rect = new Rect(-diff, 0, finalSize.Width, finalSize.Height) };
+					var clip = new RectangleGeometry { Rect = new WRect(-diff, 0, finalSize.Width, finalSize.Height) };
 					frameworkElement.Clip = clip;
 
 					return finalSize;

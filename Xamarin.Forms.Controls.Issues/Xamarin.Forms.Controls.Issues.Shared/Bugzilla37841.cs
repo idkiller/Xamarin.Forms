@@ -12,6 +12,9 @@ using NUnit.Framework;
 
 namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Bugzilla, 37841, "TableView EntryCells and TextCells cease to update after focus change", PlatformAffected.Android)]
 	public class Bugzilla37841 : TestContentPage
@@ -134,20 +137,20 @@ The EntryCell should display '112358' and the TextCell should display '48151623'
 		[Test]
 		public void TextAndEntryCellsDataBindInTableView()
 		{
-			RunningApp.WaitForElement ("Generate");
+			RunningApp.WaitForElement("Generate");
 			RunningApp.Tap("Generate");
 
-			RunningApp.Screenshot ("First Generate Tap");
+			RunningApp.Screenshot("First Generate Tap");
 
-			RunningApp.WaitForElement("12345");
-			RunningApp.WaitForElement("6789");
+			RunningApp.WaitForElement(x => x.Text("12345"));
+			RunningApp.WaitForElement(x => x.Text("6789"));
 
 			RunningApp.Tap("Generate");
 
 			RunningApp.Screenshot("Second Generate Tap");
 
-			RunningApp.WaitForElement("112358");
-			RunningApp.WaitForElement("48151623");
+			RunningApp.WaitForElement(x => x.Text("112358"));
+			RunningApp.WaitForElement(x => x.Text("48151623"));
 		}
 #endif
 	}

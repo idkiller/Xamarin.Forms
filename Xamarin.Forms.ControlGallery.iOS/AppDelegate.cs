@@ -2,7 +2,6 @@
 using System.Drawing;
 using System.Globalization;
 using System.IO;
-using AdvancedColorPicker;
 using CoreGraphics;
 using Foundation;
 using UIKit;
@@ -11,13 +10,13 @@ using Xamarin.Forms.ControlGallery.iOS;
 using Xamarin.Forms.Controls;
 using Xamarin.Forms.Controls.Issues;
 using Xamarin.Forms.Platform.iOS;
+using IOPath = System.IO.Path;
 
 [assembly: Dependency(typeof(TestCloudService))]
-[assembly: Dependency(typeof(StringProvider))]
 [assembly: Dependency(typeof(CacheService))]
 [assembly: ExportRenderer(typeof(DisposePage), typeof(DisposePageRenderer))]
 [assembly: ExportRenderer(typeof(DisposeLabel), typeof(DisposeLabelRenderer))]
-[assembly: ExportEffect(typeof(BorderEffect), "BorderEffect")]
+[assembly: ExportEffect(typeof(BorderEffect), nameof(BorderEffect))]
 namespace Xamarin.Forms.ControlGallery.iOS
 {
 	public class BorderEffect : PlatformEffect
@@ -25,6 +24,10 @@ namespace Xamarin.Forms.ControlGallery.iOS
 		protected override void OnAttached()
 		{
 			Control.BackgroundColor = UIColor.Blue;
+
+			var childLabel = (Element as ScrollView)?.Content as Label;
+			if (childLabel != null)
+				childLabel.Text = "Success";
 		}
 
 		protected override void OnDetached()
@@ -38,7 +41,7 @@ namespace Xamarin.Forms.ControlGallery.iOS
 		public void ClearImageCache()
 		{
 			var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-			var cache = Path.Combine(documents, ".config", ".isolated-storage", "ImageLoaderCache");
+			var cache = IOPath.Combine(documents, ".config", ".isolated-storage", "ImageLoaderCache");
 			foreach (var file in Directory.GetFiles(cache))
 			{
 				File.Delete(file);
@@ -69,14 +72,6 @@ namespace Xamarin.Forms.ControlGallery.iOS
 				((DisposeLabel)Element).SendRendererDisposed();
 			}
 			base.Dispose(disposing);
-		}
-	}
-
-	public class StringProvider : IStringProvider
-	{
-		public string CoreGalleryTitle
-		{
-			get { return "iOS Core Gallery"; }
 		}
 	}
 
@@ -151,11 +146,18 @@ namespace Xamarin.Forms.ControlGallery.iOS
 
 		public override bool FinishedLaunching(UIApplication uiApplication, NSDictionary launchOptions)
 		{
-			App.IOSVersion = int.Parse(UIDevice.CurrentDevice.SystemVersion.Substring(0, 1));
+			UISwitch.Appearance.OnTintColor = UIColor.Red;
+			var versionPart = UIDevice.CurrentDevice.SystemVersion.Split(new char[] { '.' }, StringSplitOptions.RemoveEmptyEntries);
+			App.IOSVersion = int.Parse(versionPart[0]);
 
 			Xamarin.Calabash.Start();
+			Forms.SetFlags("SwipeView_Experimental", "MediaElement_Experimental", "AppTheme_Experimental");
 			Forms.Init();
 			FormsMaps.Init();
+#if __XCODE11__
+			FormsMaterial.Init();
+#endif
+
 			Forms.ViewInitialized += (object sender, ViewInitializedEventArgs e) =>
 			{
 				// http://developer.xamarin.com/recipes/testcloud/set-accessibilityidentifier-ios/
@@ -165,17 +167,32 @@ namespace Xamarin.Forms.ControlGallery.iOS
 				}
 			};
 
+			if (App.IOSVersion == 11)
+			{
+				// 'Large' Title bar text
+				UINavigationBar.Appearance.LargeTitleTextAttributes = new UIStringAttributes
+				{
+					ForegroundColor = UIColor.FromRGB(0xE7, 0x63, 0x3B), // e7963b dark
+					Font = UIFont.FromName("GillSans-Italic", 40)
+				};
+			}
+
 			var app = new App();
 			_app = app;
 
 			// When the native control gallery loads up, it'll let us know so we can add the nested native controls
 			MessagingCenter.Subscribe<NestedNativeControlGalleryPage>(this, NestedNativeControlGalleryPage.ReadyForNativeControlsMessage, AddNativeControls);
 			MessagingCenter.Subscribe<Bugzilla40911>(this, Bugzilla40911.ReadyToSetUp40911Test, SetUp40911Test);
+			MessagingCenter.Subscribe<Issue5503>(this, Issue5503.ChangeUITableViewAppearanceBgColor, (s) =>
+			{
+				UITableView.Appearance.BackgroundColor = UITableView.Appearance.BackgroundColor == null ? UIColor.Red : null;
+			});
 
 			// When the native binding gallery loads up, it'll let us know so we can set up the native bindings
 			MessagingCenter.Subscribe<NativeBindingGalleryPage>(this, NativeBindingGalleryPage.ReadyForNativeBindingsMessage, AddNativeBindings);
 
 			LoadApplication(app);
+
 			return base.FinishedLaunching(uiApplication, launchOptions);
 		}
 
@@ -205,7 +222,7 @@ namespace Xamarin.Forms.ControlGallery.iOS
 			sl?.Children.Add(uilabel);
 
 			// Create and add a native Button 
-			var uibutton = new UIButton(UIButtonType.RoundedRect);
+			var uibutton = new UIButton(UIButtonType.System);
 			uibutton.SetTitle("Toggle Text Amount", UIControlState.Normal);
 			uibutton.Font = UIFont.FromName("Helvetica", 14f);
 
@@ -304,7 +321,7 @@ namespace Xamarin.Forms.ControlGallery.iOS
 				Text = "DefaultText"
 			};
 
-			var uibuttonColor = new UIButton(UIButtonType.RoundedRect);
+			var uibuttonColor = new UIButton(UIButtonType.System);
 			uibuttonColor.SetTitle("Toggle Text Color Binding", UIControlState.Normal);
 			uibuttonColor.Font = UIFont.FromName("Helvetica", 14f);
 			uibuttonColor.TouchUpInside += (sender, args) => uilabel.TextColor = UIColor.Blue;
@@ -324,7 +341,7 @@ namespace Xamarin.Forms.ControlGallery.iOS
 			uiView.Add(uilabel);
 			sl?.Children.Add(uiView);
 			sl?.Children.Add(uibuttonColor.ToView());
-			var colorPicker = new ColorPickerView(new CGRect(0, 0, width, 300));
+			var colorPicker = new AdvancedColorPicker.ColorPickerView(new CGRect(0, 0, width, 300));
 			colorPicker.SetBinding("SelectedColor", new Binding("NativeLabelColor", BindingMode.TwoWay, nativeColorConverter), "ColorPicked");
 			sl?.Children.Add(colorPicker);
 			page.NativeControlsAdded = true;
@@ -341,13 +358,13 @@ namespace Xamarin.Forms.ControlGallery.iOS
 				StartPressed40911();
 			};
 
-			page.Layout.Children.Add(button);
+			page._40911Layout.Children.Add(button);
 		}
 
 		public void StartPressed40911()
 		{
 			var loginViewController = new UIViewController { View = { BackgroundColor = UIColor.White } };
-			var button = UIButton.FromType(UIButtonType.RoundedRect);
+			var button = UIButton.FromType(UIButtonType.System);
 			button.SetTitle("Login", UIControlState.Normal);
 			button.Frame = new CGRect(20, 100, 200, 44);
 			loginViewController.View.AddSubview(button);
@@ -383,6 +400,12 @@ namespace Xamarin.Forms.ControlGallery.iOS
 		{
 			_app.Reset();
 			return String.Empty;
+		}
+
+		[Export("iOSVersion")]
+		public int iOSVersion()
+		{
+			return App.IOSVersion;
 		}
 	}
 

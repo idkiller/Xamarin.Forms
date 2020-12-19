@@ -6,6 +6,12 @@ namespace Xamarin.Forms.Platform.iOS
 {
 	public class ProgressBarRenderer : ViewRenderer<ProgressBar, UIProgressView>
 	{
+		[Internals.Preserve(Conditional = true)]
+		public ProgressBarRenderer()
+		{
+
+		}
+
 		public override SizeF SizeThatFits(SizeF size)
 		{
 			// progress bar will size itself to be as wide as the request, even if its inifinite
@@ -21,6 +27,7 @@ namespace Xamarin.Forms.Platform.iOS
 				if (Control == null)
 					SetNativeControl(new UIProgressView(UIProgressViewStyle.Default));
 
+				UpdateProgressColor();
 				UpdateProgress();
 			}
 
@@ -31,7 +38,9 @@ namespace Xamarin.Forms.Platform.iOS
 		{
 			base.OnElementPropertyChanged(sender, e);
 
-			if (e.PropertyName == ProgressBar.ProgressProperty.PropertyName)
+			if (e.PropertyName == ProgressBar.ProgressColorProperty.PropertyName)
+				UpdateProgressColor();
+			else if (e.PropertyName == ProgressBar.ProgressProperty.PropertyName)
 				UpdateProgress();
 		}
 
@@ -43,6 +52,11 @@ namespace Xamarin.Forms.Platform.iOS
 				return;
 
 			Control.TrackTintColor = color != Color.Default ? color.ToUIColor() : null;
+		}
+
+		void UpdateProgressColor()
+		{
+			Control.ProgressTintColor = Element.ProgressColor == Color.Default ? null : Element.ProgressColor.ToUIColor();
 		}
 
 		void UpdateProgress()

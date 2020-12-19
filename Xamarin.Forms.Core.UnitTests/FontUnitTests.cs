@@ -49,9 +49,11 @@ namespace Xamarin.Forms.Core.UnitTests
 			Assert.AreEqual (NamedSize.Medium, font.NamedSize);
 		}
 
-		[Test]
-		public void CultureTestSystemFontOfSizeDouble ()
+		[TestCase("en-US"), TestCase("tr-TR"), TestCase("fr-FR")]
+		public void CultureTestSystemFontOfSizeDouble (string culture)
 		{
+			System.Threading.Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo(culture);
+
 			var font = Font.SystemFontOfSize (12.7);
 			Assert.AreEqual (null, font.FontFamily);
 			Assert.AreEqual (12.7, font.FontSize);
@@ -125,5 +127,33 @@ namespace Xamarin.Forms.Core.UnitTests
 			Assert.AreEqual (Font.OfSize ("Foo", 12).WithAttributes (FontAttributes.Bold | FontAttributes.Italic), converter.ConvertFromInvariantString ("Foo, Bold, Italic, 12"));
 			Assert.AreEqual (Font.OfSize ("Foo", 12.7).WithAttributes (FontAttributes.Bold | FontAttributes.Italic), converter.ConvertFromInvariantString ("Foo, Bold, Italic, 12.7"));
 		}
+
+		[Test]
+		public void TestFontParsing()
+		{
+			var input = "PTM55FT#PTMono-Regular";
+			var input2 = "PTM55FT.ttf#PTMono-Regular";
+			var input3 = "CuteFont-Regular";
+
+			var font1 = FontFile.FromString(input);
+			var font2 = FontFile.FromString(input2);
+			var font3 = FontFile.FromString(input3);
+
+			Assert.AreEqual(font1.FileName, "PTM55FT");
+			Assert.AreEqual(font1.PostScriptName, "PTMono-Regular");
+			Assert.IsNull(font1.Extension);
+
+
+			Assert.AreEqual(font2.FileName, "PTM55FT");
+			Assert.AreEqual(font2.PostScriptName, "PTMono-Regular");
+			Assert.AreEqual(font2.Extension, ".ttf");
+
+
+			Assert.AreEqual(font3.FileName, "CuteFont-Regular");
+			Assert.AreEqual(font3.PostScriptName, "CuteFont-Regular");
+			Assert.IsNull(font3.Extension);
+
+		}
+
 	}
 }

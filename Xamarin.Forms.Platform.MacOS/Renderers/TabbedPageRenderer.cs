@@ -42,7 +42,7 @@ namespace Xamarin.Forms.Platform.MacOS
 
 			if (oldElement != null)
 			{
-				oldElement.PropertyChanged -= OnPropertyChanged;
+				oldElement.PropertyChanged -= OnElementPropertyChanged;
 				var tabbedPage = oldElement as TabbedPage;
 				if (tabbedPage != null) tabbedPage.PagesChanged -= OnPagesChanged;
 			}
@@ -56,13 +56,13 @@ namespace Xamarin.Forms.Platform.MacOS
 				}
 			}
 
-			OnElementChanged(new VisualElementChangedEventArgs(oldElement, element));
+			RaiseElementChanged(new VisualElementChangedEventArgs(oldElement, element));
 
 			ConfigureTabView();
 
 			OnPagesChanged(null, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Reset));
 
-			Tabbed.PropertyChanged += OnPropertyChanged;
+			Tabbed.PropertyChanged += OnElementPropertyChanged;
 			Tabbed.PagesChanged += OnPagesChanged;
 
 			UpdateBarBackgroundColor();
@@ -72,9 +72,7 @@ namespace Xamarin.Forms.Platform.MacOS
 			EffectUtilities.RegisterEffectControlProvider(this, oldElement, element);
 		}
 
-		IPageController PageController => Element as IPageController;
-
-		IElementController ElementController => Element;
+		Page Page => Element as Page;
 
 		void IEffectControlProvider.RegisterEffect(Effect effect)
 		{
@@ -103,8 +101,13 @@ namespace Xamarin.Forms.Platform.MacOS
 			if (!Element.Bounds.IsEmpty)
 				View.Frame = new System.Drawing.RectangleF((float)Element.X, (float)Element.Y, (float)Element.Width, (float)Element.Height);
 
+			var topOffset = TabHolderHeight;
+			var tabStyle = Tabbed.OnThisPlatform().GetTabsStyle();
+			if (tabStyle == TabsStyle.Hidden || tabStyle == TabsStyle.OnNavigation)
+				topOffset = 0;
+
 			var frame = View.Frame;
-			PageController.ContainerArea = new Rectangle(0, 0, frame.Width, frame.Height - TabHolderHeight);
+			Page.ContainerArea = new Rectangle(0, 0, frame.Width, frame.Height - topOffset);
 
 			if (!_queuedSize.IsZero)
 			{
@@ -129,14 +132,14 @@ namespace Xamarin.Forms.Platform.MacOS
 
 		public override void ViewDidAppear()
 		{
-			PageController.SendAppearing();
+			Page.SendAppearing();
 			base.ViewDidAppear();
 		}
 
 		public override void ViewDidDisappear()
 		{
 			base.ViewDidDisappear();
-			PageController.SendDisappearing();
+			Page.SendDisappearing();
 		}
 
 		protected override void Dispose(bool disposing)
@@ -144,8 +147,8 @@ namespace Xamarin.Forms.Platform.MacOS
 			if (disposing && !_disposed)
 			{
 				_disposed = true;
-				PageController.SendDisappearing();
-				Tabbed.PropertyChanged -= OnPropertyChanged;
+				Page.SendDisappearing();
+				Tabbed.PropertyChanged -= OnElementPropertyChanged;
 				Tabbed.PagesChanged -= OnPagesChanged;
 
 				if (_tracker != null)
@@ -184,28 +187,35 @@ namespace Xamarin.Forms.Platform.MacOS
 			TabView.TabViewType = NSTabViewType.NSNoTabsNoBorder;
 		}
 
+		void RaiseElementChanged(VisualElementChangedEventArgs e)
+		{
+			OnElementChanged(e);
+			ElementChanged?.Invoke(this, e);
+		}
+
 		protected virtual void OnElementChanged(VisualElementChangedEventArgs e)
 		{
-			ElementChanged?.Invoke(this, e);
 		}
 
 		protected virtual NSTabViewItem GetTabViewItem(Page page, IVisualElementRenderer pageRenderer)
 		{
 			var tvi = new NSTabViewItem { ViewController = pageRenderer.ViewController, Label = page.Title ?? "" };
-			if (!string.IsNullOrEmpty (page.Icon)) {
-				var image = GetTabViewItemIcon (page.Icon);
-				if (image != null)
-					tvi.Image = image;
-			}
+			_ = this.ApplyNativeImageAsync(page, Page.IconImageSourceProperty, icon =>
+			{
+				if (icon != null)
+				{
+					var image = GetTabViewItemIconImageSource(icon);
+					if (image != null)
+						tvi.Image = image;
+				}
+			});
 			return tvi;
 		}
 
-		protected virtual NSImage GetTabViewItemIcon(string imageName)
-		{
-			var image = NSImage.ImageNamed (imageName);
-			if(image == null)
-				image = new NSImage (imageName);
+		protected virtual NSImage GetTabViewItemIcon(string imageName) => GetTabViewItemIconImageSource(NSImage.ImageNamed(imageName));
 
+		protected virtual NSImage GetTabViewItemIconImageSource(NSImage image)
+		{
 			if (image == null)
 				return null;
 
@@ -231,21 +241,22 @@ namespace Xamarin.Forms.Platform.MacOS
 				var index = TabbedPage.GetIndex(page);
 				TabViewItems[index].Label = page.Title;
 			}
-			else if (e.PropertyName == Page.IconProperty.PropertyName)
+			else if (e.PropertyName == Page.IconImageSourceProperty.PropertyName)
 			{
 				var page = (Page)sender;
 
 				var index = TabbedPage.GetIndex(page);
-				TabViewItems[index].Label = page.Title;
+				var item = TabViewItems[index];
 
-				if (!string.IsNullOrEmpty(page.Icon))
+				item.Label = page.Title;
+
+				_ = this.ApplyNativeImageAsync(page, Page.IconImageSourceProperty, icon =>
 				{
-					TabViewItems[index].Image = new NSImage(page.Icon);
-				}
-				else if (TabViewItems[index].Image != null)
-				{
-					TabViewItems[index].Image = new NSImage();
-				}
+					if (icon != null)
+						item.Image = icon;
+					else if (item.Image != null)
+						item.Image = new NSImage();
+				});
 			}
 		}
 
@@ -260,7 +271,7 @@ namespace Xamarin.Forms.Platform.MacOS
 			SetSelectedTabViewItem();
 		}
 
-		void OnPropertyChanged(object sender, PropertyChangedEventArgs e)
+		protected virtual void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
 			if (e.PropertyName == nameof(TabbedPage.CurrentPage))
 			{
@@ -286,9 +297,9 @@ namespace Xamarin.Forms.Platform.MacOS
 		void SetControllers()
 		{
 			_updatingControllers = true;
-			for (var i = 0; i < ElementController.LogicalChildren.Count; i++)
+			for (var i = 0; i < Element.LogicalChildren.Count; i++)
 			{
-				var child = ElementController.LogicalChildren[i];
+				var child = Element.LogicalChildren[i];
 				var page = child as Page;
 				if (page == null)
 					continue;
@@ -342,7 +353,7 @@ namespace Xamarin.Forms.Platform.MacOS
 				int originalIndex;
 				if (int.TryParse(TabViewItems[i].ViewController.Identifier, out originalIndex))
 				{
-					var page = PageController.InternalChildren[originalIndex];
+					var page = Page.InternalChildren[originalIndex];
 					TabbedPage.SetIndex(page as Page, i);
 				}
 			}
@@ -350,7 +361,7 @@ namespace Xamarin.Forms.Platform.MacOS
 
 		void UpdateCurrentPage()
 		{
-			var count = PageController.InternalChildren.Count;
+			var count = Page.InternalChildren.Count;
 			Tabbed.CurrentPage = SelectedTabViewItemIndex >= 0 && SelectedTabViewItemIndex < count
 				? Tabbed.GetPageByIndex((int)SelectedTabViewItemIndex)
 				: null;

@@ -6,14 +6,11 @@ using Xamarin.UITest;
 using NUnit.Framework;
 #endif
 
-// Apply the default category of "Issues" to all of the tests in this assembly
-// We use this as a catch-all for tests which haven't been individually categorized
-#if UITEST
-[assembly: NUnit.Framework.Category("Issues")]
-#endif
-
 namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Bugzilla, 51505, "ObjectDisposedException On Effect detachment.", PlatformAffected.Android)]
 	public class Bugzilla51505 : TestContentPage
@@ -22,7 +19,7 @@ namespace Xamarin.Forms.Controls.Issues
 
 		protected override void Init()
 		{
-			var effect = Effect.Resolve("XamControl.BorderEffect");
+			var effect = Effect.Resolve($"{Issues.Effects.ResolutionGroupName}.BorderEffect");
 
 			var button = new Button { Text = "Click me", AutomationId = ButtonId };
 			button.Clicked += async (sender, e) =>
@@ -33,9 +30,9 @@ namespace Xamarin.Forms.Controls.Issues
 
 			Content = new StackLayout
 			{
-				Children = 
+				Children =
 				{
-					new Label 
+					new Label
 					{
 						Text = "The following Button has an Effect applied to it that should attempt to access the Control when it is Detached. When you click the Button, this page should be popped. If the app crashes, this test has failed."
 					},

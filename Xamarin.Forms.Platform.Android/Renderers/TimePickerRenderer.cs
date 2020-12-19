@@ -1,43 +1,52 @@
 using System;
 using System.ComponentModel;
 using Android.App;
-using Android.Content.Res;
-using Android.Widget;
+using Android.Content;
+using Android.Util;
 using Android.Text.Format;
-using ADatePicker = Android.Widget.DatePicker;
 using ATimePicker = Android.Widget.TimePicker;
-using Object = Java.Lang.Object;
+using Android.OS;
+using Android.Widget;
+using AColor = Android.Graphics.Color;
 
 namespace Xamarin.Forms.Platform.Android
 {
-	public class TimePickerRenderer : ViewRenderer<TimePicker, EditText>, TimePickerDialog.IOnTimeSetListener
+	public abstract class TimePickerRendererBase<TControl> : ViewRenderer<TimePicker, TControl>, TimePickerDialog.IOnTimeSetListener, IPickerRenderer
+		where TControl : global::Android.Views.View
 	{
 		AlertDialog _dialog;
-		TextColorSwitcher _textColorSwitcher;
+		bool _disposed;
 
-		public TimePickerRenderer()
+		bool Is24HourView
+		{
+			get => (DateFormat.Is24HourFormat(Context) && Element.Format == (string)TimePicker.FormatProperty.DefaultValue) || Element.Format == "HH:mm";
+		}
+
+		public TimePickerRendererBase(Context context) : base(context)
 		{
 			AutoPackage = false;
 		}
+
+		[Obsolete("This constructor is obsolete as of version 2.5. Please use TimePickerRenderer(Context) instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public TimePickerRendererBase()
+		{
+			AutoPackage = false;
+		}
+
+		protected abstract EditText EditText { get; }
 
 		IElementController ElementController => Element as IElementController;
 
 		void TimePickerDialog.IOnTimeSetListener.OnTimeSet(ATimePicker view, int hourOfDay, int minute)
 		{
-			ElementController.SetValueFromRenderer(VisualElement.IsFocusedPropertyKey, false);
-
 			ElementController.SetValueFromRenderer(TimePicker.TimeProperty, new TimeSpan(hourOfDay, minute, 0));
-			Control.ClearFocus();
+			ElementController.SetValueFromRenderer(VisualElement.IsFocusedPropertyKey, false);
 
 			if (Forms.IsLollipopOrNewer)
 				_dialog.CancelEvent -= OnCancelButtonClicked;
 
 			_dialog = null;
-		}
-
-		protected override EditText CreateNativeControl()
-		{
-			return new EditText(Context) { Focusable = false, Clickable = true, Tag = this };
 		}
 
 		protected override void OnElementChanged(ElementChangedEventArgs<TimePicker> e)
@@ -48,57 +57,103 @@ namespace Xamarin.Forms.Platform.Android
 			{
 				var textField = CreateNativeControl();
 
-				textField.SetOnClickListener(TimePickerListener.Instance);
 				SetNativeControl(textField);
-				_textColorSwitcher = new TextColorSwitcher(textField.TextColors); 
 			}
 
 			SetTime(e.NewElement.Time);
 			UpdateTextColor();
+			UpdateCharacterSpacing();
+			UpdateFont();
+
+			if ((int)Forms.SdkInt > 16)
+				Control.TextAlignment = global::Android.Views.TextAlignment.ViewStart;
 		}
 
 		protected override void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
+			if (this.IsDisposed())
+			{
+				return;
+			}
+
 			base.OnElementPropertyChanged(sender, e);
 
-			if (e.PropertyName == TimePicker.TimeProperty.PropertyName ||
-			    e.PropertyName == TimePicker.FormatProperty.PropertyName)
+			if (e.PropertyName == TimePicker.TimeProperty.PropertyName || e.PropertyName == TimePicker.FormatProperty.PropertyName)
 				SetTime(Element.Time);
-
-			if (e.PropertyName == TimePicker.TextColorProperty.PropertyName)
+			else if (e.PropertyName == TimePicker.TextColorProperty.PropertyName)
 				UpdateTextColor();
+			else if (e.PropertyName == TimePicker.CharacterSpacingProperty.PropertyName)
+				UpdateCharacterSpacing();
+			else if (e.PropertyName == TimePicker.FontAttributesProperty.PropertyName || e.PropertyName == TimePicker.FontFamilyProperty.PropertyName || e.PropertyName == TimePicker.FontSizeProperty.PropertyName)
+				UpdateFont();
 		}
 
-		internal override void OnFocusChangeRequested(object sender, VisualElement.FocusRequestArgs e)
+		protected override void OnFocusChangeRequested(object sender, VisualElement.FocusRequestArgs e)
 		{
 			base.OnFocusChangeRequested(sender, e);
 
 			if (e.Focus)
-				OnClick();
+			{
+				if (Clickable)
+					CallOnClick();
+				else
+					((IPickerRenderer)this)?.OnClick();
+			}
 			else if (_dialog != null)
 			{
 				_dialog.Hide();
 				ElementController.SetValueFromRenderer(VisualElement.IsFocusedPropertyKey, false);
-				Control.ClearFocus();
 
 				if (Forms.IsLollipopOrNewer)
 					_dialog.CancelEvent -= OnCancelButtonClicked;
 
+				_dialog?.Dispose();
 				_dialog = null;
 			}
 		}
 
-		void OnClick()
+		protected virtual TimePickerDialog CreateTimePickerDialog(int hours, int minutes)
 		{
+			var dialog = new TimePickerDialog(Context, this, hours, minutes, Is24HourView);
+
+			if (Forms.IsLollipopOrNewer)
+				dialog.CancelEvent += OnCancelButtonClicked;
+
+			return dialog;
+		}
+
+		protected override void Dispose(bool disposing)
+		{
+			if (_disposed)
+			{
+				return;
+			}
+
+			_disposed = true;
+
+			if (disposing)
+			{
+				if (Forms.IsLollipopOrNewer && _dialog.IsAlive())
+					_dialog.CancelEvent -= OnCancelButtonClicked;
+
+				_dialog?.Dispose();
+				_dialog = null;
+			}
+
+			base.Dispose(disposing);
+		}
+
+		void IPickerRenderer.OnClick()
+		{
+			if (_dialog != null && _dialog.IsShowing)
+			{
+				return;
+			}
+
 			TimePicker view = Element;
 			ElementController.SetValueFromRenderer(VisualElement.IsFocusedPropertyKey, true);
 
-			bool is24HourFormat = DateFormat.Is24HourFormat(Context);
-			_dialog = new TimePickerDialog(Context, this, view.Time.Hours, view.Time.Minutes, is24HourFormat);
-
-			if (Forms.IsLollipopOrNewer)
-				_dialog.CancelEvent += OnCancelButtonClicked;
-
+			_dialog = CreateTimePickerDialog(view.Time.Hours, view.Time.Minutes);
 			_dialog.Show();
 		}
 
@@ -109,26 +164,50 @@ namespace Xamarin.Forms.Platform.Android
 
 		void SetTime(TimeSpan time)
 		{
-			Control.Text = DateTime.Today.Add(time).ToString(Element.Format);
+			var timeFormat = Is24HourView ? "HH:mm" : Element.Format;
+			EditText.Text = DateTime.Today.Add(time).ToString(timeFormat);
+			Element.InvalidateMeasureNonVirtual(Internals.InvalidationTrigger.MeasureChanged);
 		}
 
-		void UpdateTextColor()
+		void UpdateFont()
 		{
-			_textColorSwitcher?.UpdateTextColor(Control, Element.TextColor);
+			EditText.Typeface = Element.ToTypeface();
+			EditText.SetTextSize(ComplexUnitType.Sp, (float)Element.FontSize);
 		}
 
-		class TimePickerListener : Object, IOnClickListener
+		void UpdateCharacterSpacing()
 		{
-			public static readonly TimePickerListener Instance = new TimePickerListener();
-
-			public void OnClick(global::Android.Views.View v)
+			if (Forms.IsLollipopOrNewer)
 			{
-				var renderer = v.Tag as TimePickerRenderer;
-				if (renderer == null)
-					return;
-
-				renderer.OnClick();
+				EditText.LetterSpacing = Element.CharacterSpacing.ToEm();
 			}
 		}
+
+		abstract protected void UpdateTextColor();
 	}
+
+	public class TimePickerRenderer : TimePickerRendererBase<EditText>
+	{
+		TextColorSwitcher _textColorSwitcher;
+		[Obsolete("This constructor is obsolete as of version 2.5. Please use TimePickerRenderer(Context) instead.")]
+		public TimePickerRenderer()
+		{
+		}
+
+		public TimePickerRenderer(Context context) : base(context)
+		{
+		}
+
+		protected override EditText CreateNativeControl()
+		{
+			return new PickerEditText(Context);
+		}
+
+		protected override EditText EditText => Control;
+		protected override void UpdateTextColor()
+		{
+			_textColorSwitcher = _textColorSwitcher ?? new TextColorSwitcher(EditText.TextColors, Element.UseLegacyColorManagement());
+			_textColorSwitcher.UpdateTextColor(EditText, Element.TextColor);
+		}
+    }
 }

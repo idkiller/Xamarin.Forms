@@ -4,41 +4,31 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
-using System.Runtime.CompilerServices;
 
 namespace Xamarin.Forms
 {
 	[ContentProperty("Spans")]
-	public class FormattedString : INotifyPropertyChanged
+	public class FormattedString : Element
 	{
 		readonly SpanCollection _spans = new SpanCollection();
+		internal event NotifyCollectionChangedEventHandler SpansCollectionChanged;
 
-		public FormattedString()
+		public FormattedString() => _spans.CollectionChanged += OnCollectionChanged;
+
+		protected override void OnBindingContextChanged()
 		{
-			_spans.CollectionChanged += OnCollectionChanged;
+			base.OnBindingContextChanged();
+			for (int i = 0; i < Spans.Count; i++)
+				SetInheritedBindingContext(Spans[i], BindingContext);			
 		}
 
-		public IList<Span> Spans
-		{
-			get { return _spans; }
-		}
+		public IList<Span> Spans => _spans;
 
-		public event PropertyChangedEventHandler PropertyChanged;
+		public static explicit operator string(FormattedString formatted) => formatted.ToString();
 
-		public static explicit operator string(FormattedString formatted)
-		{
-			return formatted.ToString();
-		}
+		public static implicit operator FormattedString(string text) => new FormattedString { Spans = { new Span { Text = text } } };
 
-		public static implicit operator FormattedString(string text)
-		{
-			return new FormattedString { Spans = { new Span { Text = text } } };
-		}
-
-		public override string ToString()
-		{
-			return string.Concat(Spans.Select(span => span.Text));
-		}
+		public override string ToString() => string.Concat(Spans.Select(span => span.Text));
 
 		void OnCollectionChanged(object sender, NotifyCollectionChangedEventArgs e)
 		{
@@ -47,8 +37,13 @@ namespace Xamarin.Forms
 				foreach (object item in e.OldItems)
 				{
 					var bo = item as Span;
+					bo.Parent = null;
 					if (bo != null)
+					{
+						bo.PropertyChanging -= OnItemPropertyChanging;
 						bo.PropertyChanged -= OnItemPropertyChanged;
+					}
+						
 				}
 			}
 
@@ -57,42 +52,34 @@ namespace Xamarin.Forms
 				foreach (object item in e.NewItems)
 				{
 					var bo = item as Span;
+					bo.Parent = this;
 					if (bo != null)
+					{
+						bo.PropertyChanging += OnItemPropertyChanging;
 						bo.PropertyChanged += OnItemPropertyChanged;
+					}
+						
 				}
 			}
 
-			OnPropertyChanged("Spans");
+			OnPropertyChanged(nameof(Spans));
+			SpansCollectionChanged?.Invoke(sender, e);
 		}
 
-		void OnItemPropertyChanged(object sender, PropertyChangedEventArgs e)
-		{
-			OnPropertyChanged("Spans");
-		}
+		void OnItemPropertyChanged(object sender, PropertyChangedEventArgs e) => OnPropertyChanged(nameof(Spans));
 
-		void OnPropertyChanged([CallerMemberName] string propertyName = null)
-		{
-			PropertyChangedEventHandler handler = PropertyChanged;
-			if (handler != null)
-				handler(this, new PropertyChangedEventArgs(propertyName));
-		}
+		void OnItemPropertyChanging(object sender, PropertyChangingEventArgs e) => OnPropertyChanging(nameof(Spans));
 
 		class SpanCollection : ObservableCollection<Span>
 		{
-			protected override void InsertItem(int index, Span item)
+			protected override void InsertItem(int index, Span item) => base.InsertItem(index, item ?? throw new ArgumentNullException(nameof(item)));
+			protected override void SetItem(int index, Span item) => base.SetItem(index, item ?? throw new ArgumentNullException(nameof(item)));
+
+			protected override void ClearItems()
 			{
-				if (item == null)
-					throw new ArgumentNullException("item");
-
-				base.InsertItem(index, item);
-			}
-
-			protected override void SetItem(int index, Span item)
-			{
-				if (item == null)
-					throw new ArgumentNullException("item");
-
-				base.SetItem(index, item);
+				var removed = new List<Span>(this);
+				base.ClearItems();
+				base.OnCollectionChanged(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Remove, removed));
 			}
 		}
 	}

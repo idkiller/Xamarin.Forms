@@ -29,20 +29,31 @@ namespace Xamarin.Forms.Controls
 			var btn1 = new Button { Text = "Start" };
 			var btn2 = new Button { Text = "Center" };
 			var btn3 = new Button { Text = "End" };
+			var btn7 = new Button { Text = "Toggle Scroll Bar Visibility" };
 			var btn6 = new Button { Text = "MakeVisible", HorizontalOptions= LayoutOptions.CenterAndExpand, BackgroundColor = Color.Accent };
-			
+			var btn8 = new Button { Text = "Toggle Orientation" };
+			var btn9 = new Button { Text = "Default Scroll Bar Visibility" };
+
+			var labelStack = new StackLayout { Orientation = StackOrientation.Horizontal };
 			var label = new Label { Text = string.Format ("X: {0}, Y: {1}", 0, 0) };
+			var scrollStatusLabel = new Label { Text = string.Empty };
 			
-			root.Children.Add (label);
+			root.Children.Add (labelStack);
 			root.Children.Add (btnStack);
 			root.Children.Add (btnStack1);
 
 			btnStack.Children.Add (btn1);
 			btnStack.Children.Add (btn2);
 			btnStack.Children.Add (btn3);
+			btnStack.Children.Add(btn7);
+			btnStack.Children.Add(btn9);
+			btnStack.Children.Add(btn8);
 
 			btnStack1.Children.Add (btn);
 			btnStack1.Children.Add (btn4);
+
+			labelStack.Children.Add(label);
+			labelStack.Children.Add(scrollStatusLabel);
 
 			Grid.SetRow (btnStack, 1);
 			Grid.SetRow (btnStack1, 2);
@@ -67,6 +78,7 @@ namespace Xamarin.Forms.Controls
 			};
 
 			btn.Clicked += async (object sender, EventArgs e) => {
+				scrollStatusLabel.Text = "scrolling";
 				switch (orientation) {
 					case ScrollOrientation.Horizontal:
 						await _scrollview.ScrollToAsync (100, 0, true);
@@ -78,6 +90,7 @@ namespace Xamarin.Forms.Controls
 						await _scrollview.ScrollToAsync (100, 100, true);
 						break;
 				}
+				scrollStatusLabel.Text = "completed";
 			};
 			btn4.Clicked += async (object sender, EventArgs e) => {
 				switch (orientation) {
@@ -104,6 +117,38 @@ namespace Xamarin.Forms.Controls
 			};
 			btn6.Clicked += async (object sender, EventArgs e) => {
 				await _scrollview.ScrollToAsync (_toNavigateTo, ScrollToPosition.MakeVisible, true);
+			};
+			btn7.Clicked += (object sender, EventArgs e) =>
+			{
+				if (_scrollview.VerticalScrollBarVisibility == ScrollBarVisibility.Always ||
+				_scrollview.VerticalScrollBarVisibility == ScrollBarVisibility.Default)
+				{
+					_scrollview.VerticalScrollBarVisibility = ScrollBarVisibility.Never;
+					_scrollview.HorizontalScrollBarVisibility = ScrollBarVisibility.Never;
+				}
+				else
+				{
+					_scrollview.VerticalScrollBarVisibility = ScrollBarVisibility.Always;
+					_scrollview.HorizontalScrollBarVisibility = ScrollBarVisibility.Always;
+				}
+			};
+
+			btn8.Clicked += (object sender, EventArgs e) =>
+			{
+				if (_scrollview.Orientation == ScrollOrientation.Horizontal)
+				{
+					_scrollview.Orientation = ScrollOrientation.Vertical;
+				}
+				else
+				{
+					_scrollview.Orientation = ScrollOrientation.Horizontal;
+				}
+			};
+
+			btn9.Clicked += (object sender, EventArgs e) =>
+			{
+				_scrollview.VerticalScrollBarVisibility = ScrollBarVisibility.Default;
+				_scrollview.HorizontalScrollBarVisibility = ScrollBarVisibility.Default;
 			};
 
 			_stack.Padding = new Size (20, 60);

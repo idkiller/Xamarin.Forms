@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Threading;
 using System.ComponentModel;
 using System.Threading.Tasks;
 using Xamarin.Forms.Internals;
@@ -10,31 +11,39 @@ namespace Xamarin.Forms
 {
 	public class Application : Element, IResourcesProvider, IApplicationController, IElementConfiguration<Application>
 	{
-		static Application s_current;
+		readonly WeakEventManager _weakEventManager = new WeakEventManager();
 		Task<IDictionary<string, object>> _propertiesTask;
 		readonly Lazy<PlatformConfigurationRegistry<Application>> _platformConfigurationRegistry;
 
+		public override IDispatcher Dispatcher => this.GetDispatcher();
+
 		IAppIndexingProvider _appIndexProvider;
-		bool _isSaving;
-
 		ReadOnlyCollection<Element> _logicalChildren;
-
 		Page _mainPage;
 
-		ResourceDictionary _resources;
-		bool _saveAgain;
+		static readonly SemaphoreSlim SaveSemaphore = new SemaphoreSlim(1, 1);
 
-		protected Application()
+		[Obsolete("Assign the LogWarningsListener")]
+		public static bool LogWarningsToApplicationOutput { get; set; }
+
+		public Application()
 		{
 			var f = false;
 			if (f)
 				Loader.Load();
-			NavigationProxy = new NavigationImpl(this);
-			SetCurrentApplication(this);
 
+			SetCurrentApplication(this);
+			NavigationProxy = new NavigationImpl(this);
 			SystemResources = DependencyService.Get<ISystemResourcesProvider>().GetSystemResources();
 			SystemResources.ValuesChanged += OnParentResourcesChanged;
 			_platformConfigurationRegistry = new Lazy<PlatformConfigurationRegistry<Application>>(() => new PlatformConfigurationRegistry<Application>(this));
+			// Initialize this value, when the app loads
+			_lastAppTheme = RequestedTheme;
+		}
+
+		public void Quit()
+		{
+			Device.PlatformServices?.QuitApplication();
 		}
 
 		public IAppLinks AppLinks
@@ -52,18 +61,7 @@ namespace Xamarin.Forms
 		[EditorBrowsable(EditorBrowsableState.Never)]
 		public static void SetCurrentApplication(Application value) => Current = value;
 
-		public static Application Current
-		{
-			get { return s_current; }
-			set 
-			{
-				if (s_current == value)
-					return;
-				if (value == null)
-					s_current = null; //Allow to reset current for unittesting
-				s_current = value;
-			}
-		}
+		public static Application Current { get; set; }
 
 		public Page MainPage
 		{
@@ -80,6 +78,7 @@ namespace Xamarin.Forms
 				if (_mainPage != null)
 				{
 					InternalChildren.Remove(_mainPage);
+
 					_mainPage.Parent = null;
 				}
 
@@ -114,7 +113,7 @@ namespace Xamarin.Forms
 		}
 
 		[EditorBrowsable(EditorBrowsableState.Never)]
-		public NavigationProxy NavigationProxy { get; }
+		public NavigationProxy NavigationProxy { get; private set; }
 
 		[EditorBrowsable(EditorBrowsableState.Never)]
 		public int PanGestureId { get; set; }
@@ -123,14 +122,26 @@ namespace Xamarin.Forms
 
 		ObservableCollection<Element> InternalChildren { get; } = new ObservableCollection<Element>();
 
-		void IApplicationController.SetAppIndexingProvider(IAppIndexingProvider provider)
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public void SetAppIndexingProvider(IAppIndexingProvider provider)
 		{
 			_appIndexProvider = provider;
 		}
 
+		ResourceDictionary _resources;
+		bool IResourcesProvider.IsResourcesCreated => _resources != null;
+
 		public ResourceDictionary Resources
 		{
-			get { return _resources; }
+			get
+			{
+				if (_resources != null)
+					return _resources;
+
+				_resources = new ResourceDictionary();
+				((IResourceDictionary)_resources).ValuesChanged += OnResourcesChanged;
+				return _resources;
+			}
 			set
 			{
 				if (_resources == value)
@@ -146,6 +157,59 @@ namespace Xamarin.Forms
 			}
 		}
 
+		public OSAppTheme UserAppTheme
+		{
+			get => _userAppTheme;
+			set
+			{
+				_userAppTheme = value;
+				TriggerThemeChangedActual(new AppThemeChangedEventArgs(value));
+			}
+		}
+		public OSAppTheme RequestedTheme => UserAppTheme == OSAppTheme.Unspecified ? Device.PlatformServices.RequestedTheme : UserAppTheme;
+
+		public event EventHandler<AppThemeChangedEventArgs> RequestedThemeChanged
+		{
+			add => _weakEventManager.AddEventHandler(value);
+			remove => _weakEventManager.RemoveEventHandler(value);
+		}
+
+		bool _themeChangedFiring;
+		OSAppTheme _lastAppTheme;
+		OSAppTheme _userAppTheme = OSAppTheme.Unspecified;
+
+
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public void TriggerThemeChanged(AppThemeChangedEventArgs args)
+		{
+			if (UserAppTheme != OSAppTheme.Unspecified)
+				return;
+			TriggerThemeChangedActual(args);
+		}
+
+		void TriggerThemeChangedActual(AppThemeChangedEventArgs args)
+		{
+			if (Device.Flags == null || Device.Flags.IndexOf(ExperimentalFlags.AppThemeExperimental) == -1)
+				return;
+
+			// On iOS the event is triggered more than once.
+			// To minimize that for us, we only do it when the theme actually changes and it's not currently firing
+			if (_themeChangedFiring || RequestedTheme == _lastAppTheme)
+				return;
+
+			try
+			{
+				_themeChangedFiring = true;
+				_lastAppTheme = RequestedTheme;
+
+				_weakEventManager.HandleEvent(this, args, nameof(RequestedThemeChanged));
+			}
+			finally
+			{
+				_themeChangedFiring = false;
+			}
+		}
+
 		public event EventHandler<ModalPoppedEventArgs> ModalPopped;
 
 		public event EventHandler<ModalPoppingEventArgs> ModalPopping;
@@ -154,12 +218,45 @@ namespace Xamarin.Forms
 
 		public event EventHandler<ModalPushingEventArgs> ModalPushing;
 
+		public event EventHandler<Page> PageAppearing;
+
+		public event EventHandler<Page> PageDisappearing;
+
+		async void SaveProperties()
+		{
+			try
+			{
+				await SetPropertiesAsync();
+			}
+			catch (Exception exc)
+			{
+				Internals.Log.Warning(nameof(Application), $"Exception while saving Application Properties: {exc}");
+			}
+		}
+
 		public async Task SavePropertiesAsync()
 		{
-			if (Device.IsInvokeRequired)
-				Device.BeginInvokeOnMainThread(async () => await SetPropertiesAsync());
+			if (Dispatcher.IsInvokeRequired)
+			{
+				Dispatcher.BeginInvokeOnMainThread(SaveProperties);
+			}
 			else
+			{
 				await SetPropertiesAsync();
+			}
+		}
+
+		// Don't use this unless there really is no better option
+		internal void SavePropertiesAsFireAndForget()
+		{
+			if (Dispatcher.IsInvokeRequired)
+			{
+				Dispatcher.BeginInvokeOnMainThread(SaveProperties);
+			}
+			else
+			{
+				SaveProperties();
+			}
 		}
 
 		public IPlatformElementConfiguration<T, Application> On<T>() where T : IConfigPlatform
@@ -189,10 +286,7 @@ namespace Xamarin.Forms
 		}
 
 		[EditorBrowsable(EditorBrowsableState.Never)]
-		public static void ClearCurrent()
-		{
-			s_current = null;
-		}
+		public static void ClearCurrent() => Current = null;
 
 		[EditorBrowsable(EditorBrowsableState.Never)]
 		public static bool IsApplicationOrNull(Element element)
@@ -202,7 +296,7 @@ namespace Xamarin.Forms
 
 		internal override void OnParentResourcesChanged(IEnumerable<KeyValuePair<string, object>> values)
 		{
-			if (Resources == null || Resources.Count == 0)
+			if (!((IResourcesProvider)this).IsResourcesCreated || Resources.Count == 0)
 			{
 				base.OnParentResourcesChanged(values);
 				return;
@@ -231,8 +325,15 @@ namespace Xamarin.Forms
 		[EditorBrowsable(EditorBrowsableState.Never)]
 		public void SendResume()
 		{
-			s_current = this;
+			Current = this;
 			OnResume();
+		}
+
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public void SendSleep()
+		{
+			OnSleep();
+			SavePropertiesAsFireAndForget();
 		}
 
 		[EditorBrowsable(EditorBrowsableState.Never)]
@@ -264,55 +365,58 @@ namespace Xamarin.Forms
 			return properties;
 		}
 
+		internal void OnPageAppearing(Page page)
+			=> PageAppearing?.Invoke(this, page);
+
+		internal void OnPageDisappearing(Page page)
+			=> PageDisappearing?.Invoke(this, page);
+
 		void OnModalPopped(Page modalPage)
-		{
-			EventHandler<ModalPoppedEventArgs> handler = ModalPopped;
-			if (handler != null)
-				handler(this, new ModalPoppedEventArgs(modalPage));
-		}
+			=> ModalPopped?.Invoke(this, new ModalPoppedEventArgs(modalPage));
 
 		bool OnModalPopping(Page modalPage)
 		{
-			EventHandler<ModalPoppingEventArgs> handler = ModalPopping;
 			var args = new ModalPoppingEventArgs(modalPage);
-			if (handler != null)
-				handler(this, args);
+			ModalPopping?.Invoke(this, args);
 			return args.Cancel;
 		}
 
 		void OnModalPushed(Page modalPage)
-		{
-			EventHandler<ModalPushedEventArgs> handler = ModalPushed;
-			if (handler != null)
-				handler(this, new ModalPushedEventArgs(modalPage));
-		}
+			=> ModalPushed?.Invoke(this, new ModalPushedEventArgs(modalPage));
 
 		void OnModalPushing(Page modalPage)
-		{
-			EventHandler<ModalPushingEventArgs> handler = ModalPushing;
-			if (handler != null)
-				handler(this, new ModalPushingEventArgs(modalPage));
-		}
+			=> ModalPushing?.Invoke(this, new ModalPushingEventArgs(modalPage));
 
 		void OnPopCanceled()
-		{
-			EventHandler handler = PopCanceled;
-			if (handler != null)
-				handler(this, EventArgs.Empty);
-		}
+			=> PopCanceled?.Invoke(this, EventArgs.Empty);
 
 		async Task SetPropertiesAsync()
 		{
-			if (_isSaving)
+			await SaveSemaphore.WaitAsync();
+			try
 			{
-				_saveAgain = true;
-				return;
-			}
-			_isSaving = true;
-			await DependencyService.Get<IDeserializer>().SerializePropertiesAsync(Properties);
-			if (_saveAgain)
 				await DependencyService.Get<IDeserializer>().SerializePropertiesAsync(Properties);
-			_isSaving = _saveAgain = false;
+			}
+			finally
+			{
+				SaveSemaphore.Release();
+			}
+
+		}
+
+		protected internal virtual void CleanUp()
+		{
+			// Unhook everything that's referencing the main page so it can be collected
+			// This only comes up if we're disposing of an embedded Forms app, and will
+			// eventually go away when we fully support multiple windows
+			if (_mainPage != null)
+			{
+				InternalChildren.Remove(_mainPage);
+				_mainPage.Parent = null;
+				_mainPage = null;
+			}
+
+			NavigationProxy = null;
 		}
 
 		class NavigationImpl : NavigationProxy

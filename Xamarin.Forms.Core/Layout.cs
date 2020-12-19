@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Linq;
 using Xamarin.Forms.Internals;
 
@@ -17,7 +18,7 @@ namespace Xamarin.Forms
 			_children = new ElementCollection<T>(InternalChildren);
 		}
 
-		public IList<T> Children
+		public new IList<T> Children
 		{
 			get { return _children; }
 		}
@@ -49,15 +50,14 @@ namespace Xamarin.Forms
 		}
 	}
 
-	public abstract class Layout : View, ILayout, ILayoutController
+	public abstract class Layout : View, ILayout, ILayoutController, IPaddingElement
 	{
 		public static readonly BindableProperty IsClippedToBoundsProperty = BindableProperty.Create("IsClippedToBounds", typeof(bool), typeof(Layout), false);
 
-		public static readonly BindableProperty PaddingProperty = BindableProperty.Create("Padding", typeof(Thickness), typeof(Layout), default(Thickness), propertyChanged: (bindable, old, newValue) =>
-		{
-			var layout = (Layout)bindable;
-			layout.UpdateChildrenLayout();
-		});
+		public static readonly BindableProperty CascadeInputTransparentProperty = BindableProperty.Create(
+			nameof(CascadeInputTransparent), typeof(bool), typeof(Layout), true);
+
+		public static readonly BindableProperty PaddingProperty = PaddingElement.PaddingProperty;
 
 		static IList<KeyValuePair<Layout, int>> s_resolutionList = new List<KeyValuePair<Layout, int>>();
 		static bool s_relayoutInProgress;
@@ -70,6 +70,10 @@ namespace Xamarin.Forms
 
 		protected Layout()
 		{
+			//if things were added in base ctor (through implicit styles), the items added aren't properly parented
+			if (InternalChildren.Count > 0)
+				InternalChildrenOnCollectionChanged(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, InternalChildren));
+
 			InternalChildren.CollectionChanged += InternalChildrenOnCollectionChanged;
 		}
 
@@ -81,8 +85,24 @@ namespace Xamarin.Forms
 
 		public Thickness Padding
 		{
-			get { return (Thickness)GetValue(PaddingProperty); }
-			set { SetValue(PaddingProperty, value); }
+			get { return (Thickness)GetValue(PaddingElement.PaddingProperty); }
+			set { SetValue(PaddingElement.PaddingProperty, value); }
+		}
+
+		public bool CascadeInputTransparent
+		{
+			get { return (bool)GetValue(CascadeInputTransparentProperty); }
+			set { SetValue(CascadeInputTransparentProperty, value); }
+		}
+
+		Thickness IPaddingElement.PaddingDefaultValueCreator()
+		{
+			return default(Thickness);
+		}
+
+		void IPaddingElement.OnPaddingPropertyChanged(Thickness oldValue, Thickness newValue)
+		{
+			InvalidateLayout();
 		}
 
 		internal ObservableCollection<Element> InternalChildren { get; } = new ObservableCollection<Element>();
@@ -94,7 +114,8 @@ namespace Xamarin.Forms
 
 		public event EventHandler LayoutChanged;
 
-		IReadOnlyList<Element> ILayoutController.Children
+		[EditorBrowsable(EditorBrowsableState.Never)]
+		public IReadOnlyList<Element> Children
 		{
 			get { return InternalChildren; }
 		}
@@ -104,7 +125,8 @@ namespace Xamarin.Forms
 			SizeAllocated(Width, Height);
 		}
 
-		[Obsolete("Use Measure")]
+		[Obsolete("OnSizeRequest is obsolete as of version 2.2.0. Please use OnMeasure instead.")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public sealed override SizeRequest GetSizeRequest(double widthConstraint, double heightConstraint)
 		{
 			SizeRequest size = base.GetSizeRequest(widthConstraint - Padding.HorizontalThickness, heightConstraint - Padding.VerticalThickness);
@@ -114,6 +136,11 @@ namespace Xamarin.Forms
 
 		public static void LayoutChildIntoBoundingRegion(VisualElement child, Rectangle region)
 		{
+			var parent = child.Parent as IFlowDirectionController;
+			bool isRightToLeft = false;
+			if (parent != null && (isRightToLeft = parent.ApplyEffectiveFlowDirectionToChildContainer && parent.EffectiveFlowDirection.IsRightToLeft()))
+				region = new Rectangle(parent.Width - region.Right, region.Y, region.Width, region.Height);
+
 			var view = child as View;
 			if (view == null)
 			{
@@ -126,7 +153,10 @@ namespace Xamarin.Forms
 			{
 				SizeRequest request = child.Measure(region.Width, region.Height, MeasureFlags.IncludeMargins);
 				double diff = Math.Max(0, region.Width - request.Request.Width);
-				region.X += (int)(diff * horizontalOptions.Alignment.ToDouble());
+				double horizontalAlign = horizontalOptions.Alignment.ToDouble();
+				if (isRightToLeft)
+					horizontalAlign = 1 - horizontalAlign;
+				region.X += (int)(diff * horizontalAlign);
 				region.Width -= diff;
 			}
 
@@ -226,6 +256,13 @@ namespace Xamarin.Forms
 			double w = Math.Max(0, width - Padding.HorizontalThickness);
 			double h = Math.Max(0, height - Padding.VerticalThickness);
 
+			var isHeadless = CompressedLayout.GetIsHeadless(this);
+			var headlessOffset = CompressedLayout.GetHeadlessOffset(this);
+			for (var i = 0; i < LogicalChildrenInternal.Count; i++)
+				CompressedLayout.SetHeadlessOffset((VisualElement)LogicalChildrenInternal[i], isHeadless ? new Point(headlessOffset.X + Bounds.X, headlessOffset.Y + Bounds.Y) : new Point());
+
+			_lastLayoutSize = new Size(width, height);
+
 			LayoutChildren(x, y, w, h);
 
 			for (var i = 0; i < oldBounds.Length; i++)
@@ -234,35 +271,41 @@ namespace Xamarin.Forms
 				Rectangle newBound = ((VisualElement)LogicalChildrenInternal[i]).Bounds;
 				if (oldBound != newBound)
 				{
-					EventHandler handler = LayoutChanged;
-					if (handler != null)
-						handler(this, EventArgs.Empty);
+					LayoutChanged?.Invoke(this, EventArgs.Empty);
 					return;
 				}
 			}
-
-			_lastLayoutSize = new Size(width, height);
 		}
 
 		internal static void LayoutChildIntoBoundingRegion(View child, Rectangle region, SizeRequest childSizeRequest)
 		{
+			var parent = child.Parent as IFlowDirectionController;
+			bool isRightToLeft = false;
+			if (parent != null && (isRightToLeft = parent.ApplyEffectiveFlowDirectionToChildContainer && parent.EffectiveFlowDirection.IsRightToLeft()))
+				region = new Rectangle(parent.Width - region.Right, region.Y, region.Width, region.Height);
+
 			if (region.Size != childSizeRequest.Request)
 			{
 				bool canUseAlreadyDoneRequest = region.Width >= childSizeRequest.Request.Width && region.Height >= childSizeRequest.Request.Height;
 
-				if (child.HorizontalOptions.Alignment != LayoutAlignment.Fill)
+				LayoutOptions horizontalOptions = child.HorizontalOptions;
+				if (horizontalOptions.Alignment != LayoutAlignment.Fill)
 				{
 					SizeRequest request = canUseAlreadyDoneRequest ? childSizeRequest : child.Measure(region.Width, region.Height, MeasureFlags.IncludeMargins);
 					double diff = Math.Max(0, region.Width - request.Request.Width);
-					region.X += (int)(diff * child.HorizontalOptions.Alignment.ToDouble());
+					double horizontalAlign = horizontalOptions.Alignment.ToDouble();
+					if (isRightToLeft)
+						horizontalAlign = 1 - horizontalAlign;
+					region.X += (int)(diff * horizontalAlign);
 					region.Width -= diff;
 				}
 
-				if (child.VerticalOptions.Alignment != LayoutAlignment.Fill)
+				LayoutOptions verticalOptions = child.VerticalOptions;
+				if (verticalOptions.Alignment != LayoutAlignment.Fill)
 				{
 					SizeRequest request = canUseAlreadyDoneRequest ? childSizeRequest : child.Measure(region.Width, region.Height, MeasureFlags.IncludeMargins);
 					double diff = Math.Max(0, region.Height - request.Request.Height);
-					region.Y += (int)(diff * child.VerticalOptions.Alignment.ToDouble());
+					region.Y += (int)(diff * verticalOptions.Alignment.ToDouble());
 					region.Height -= diff;
 				}
 			}
@@ -316,23 +359,38 @@ namespace Xamarin.Forms
 			if (!s_relayoutInProgress)
 			{
 				s_relayoutInProgress = true;
-				Device.BeginInvokeOnMainThread(() =>
-				{
-					// if thread safety mattered we would need to lock this and compareexchange above
-					IList<KeyValuePair<Layout, int>> copy = s_resolutionList;
-					s_resolutionList = new List<KeyValuePair<Layout, int>>();
-					s_relayoutInProgress = false;
 
-					foreach (KeyValuePair<Layout, int> kvp in copy.OrderBy(kvp => kvp.Value))
-					{
-						Layout layout = kvp.Key;
-						double width = layout.Width, height = layout.Height;
-						if (!layout._allocatedFlag && width >= 0 && height >= 0)
-						{
-							layout.SizeAllocated(width, height);
-						}
-					}
-				});
+				// Rather than recomputing the layout for each change as it happens, we accumulate them in 
+				// s_resolutionList and schedule a single layout update operation to handle them all at once.
+				// This avoids a lot of unnecessary layout operations if something is triggering many property
+				// changes at once (e.g., a BindingContext change)
+
+				if (Dispatcher != null)
+				{
+					Dispatcher.BeginInvokeOnMainThread(ResolveLayoutChanges);
+				}
+				else
+				{
+					Device.BeginInvokeOnMainThread(ResolveLayoutChanges);
+				}			
+			}
+		}
+
+		internal void ResolveLayoutChanges()
+		{
+			// if thread safety mattered we would need to lock this and compareexchange above
+			IList<KeyValuePair<Layout, int>> copy = s_resolutionList;
+			s_resolutionList = new List<KeyValuePair<Layout, int>>();
+			s_relayoutInProgress = false;
+
+			foreach (KeyValuePair<Layout, int> kvp in copy)
+			{
+				Layout layout = kvp.Key;
+				double width = layout.Width, height = layout.Height;
+				if (!layout._allocatedFlag && width >= 0 && height >= 0)
+				{
+					layout.SizeAllocated(width, height);
+				}
 			}
 		}
 
@@ -368,8 +426,9 @@ namespace Xamarin.Forms
 
 			if (e.OldItems != null)
 			{
-				foreach (object item in e.OldItems)
+				for (int i = 0; i < e.OldItems.Count; i++)
 				{
+					object item = e.OldItems[i];
 					var v = item as View;
 					if (v == null)
 						continue;
@@ -380,8 +439,9 @@ namespace Xamarin.Forms
 
 			if (e.NewItems != null)
 			{
-				foreach (object item in e.NewItems)
+				for (int i = 0; i < e.NewItems.Count; i++)
 				{
+					object item = e.NewItems[i];
 					var v = item as View;
 					if (v == null)
 						continue;

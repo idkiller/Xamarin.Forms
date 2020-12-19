@@ -26,8 +26,6 @@ namespace Xamarin.Forms
 
 		T _current;
 
-		ObservableCollection<Element> InternalChildren => ((IPageController)this).InternalChildren;
-
 		protected MultiPage()
 		{
 			_templatedItems = new TemplatedItemsList<MultiPage<T>, T>(this, ItemsSourceProperty, ItemTemplateProperty);
@@ -123,11 +121,7 @@ namespace Xamarin.Forms
 		}
 
 		protected virtual void OnPagesChanged(NotifyCollectionChangedEventArgs e)
-		{
-			NotifyCollectionChangedEventHandler handler = PagesChanged;
-			if (handler != null)
-				handler(this, e);
-		}
+			=> PagesChanged?.Invoke(this, e);
 
 		protected override void OnPropertyChanged([CallerMemberName] string propertyName = null)
 		{

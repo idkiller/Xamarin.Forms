@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Android.Views;
 
 namespace Xamarin.Forms.Platform.Android
 {
@@ -35,7 +36,7 @@ namespace Xamarin.Forms.Platform.Android
 			if (view == null)
 				throw new ArgumentNullException("view");
 
-			Type rendererType = Internals.Registrar.Registered.GetHandlerType(view.GetType()) ?? typeof(ViewRenderer);
+			Type rendererType = Internals.Registrar.Registered.GetHandlerTypeForObject(view) ?? typeof(ViewRenderer);
 
 			Stack<IVisualElementRenderer> renderers;
 			if (!_freeRenderers.TryGetValue(rendererType, out renderers) || renderers.Count == 0)
@@ -54,29 +55,38 @@ namespace Xamarin.Forms.Platform.Android
 			foreach (Element logicalChild in ((IElementController)view).LogicalChildren)
 			{
 				var child = logicalChild as VisualElement;
+				
 				if (child != null)
 				{
 					IVisualElementRenderer renderer = Platform.GetRenderer(child);
+			
 					if (renderer == null)
 						continue;
 
-					if (renderer.ViewGroup.Parent != _parent.ViewGroup)
+					if (renderer.View.IsDisposed())
 						continue;
 
-					renderer.ViewGroup.RemoveFromParent();
+					if (renderer.View.Parent != _parent.View)
+						continue;
+
+					renderer.View.RemoveFromParent();
 
 					Platform.SetRenderer(child, null);
+					
 					PushRenderer(renderer);
 				}
 			}
 
-			if (_parent.ViewGroup.ChildCount != 0)
-				_parent.ViewGroup.RemoveAllViews();
+			var viewGroup = _parent.View as ViewGroup;
+
+			if (viewGroup != null && viewGroup.ChildCount != 0)
+				viewGroup.RemoveAllViews();
 		}
 
 		void PushRenderer(IVisualElementRenderer renderer)
 		{
-			Type rendererType = renderer.GetType();
+			var reflectableType = renderer as System.Reflection.IReflectableType;
+			var rendererType = reflectableType != null ? reflectableType.GetTypeInfo().AsType() : renderer.GetType();
 
 			Stack<IVisualElementRenderer> renderers;
 			if (!_freeRenderers.TryGetValue(rendererType, out renderers))

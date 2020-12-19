@@ -5,8 +5,11 @@ using Xamarin.Forms;
 using Xamarin.Forms.CustomAttributes;
 using Xamarin.Forms.Internals;
 
-namespace Xamarin.Forms.Controls
+namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
 	[Preserve (AllMembers = true)]
 	[Issue (IssueTracker.Bugzilla, 38416, "ListView Sized Incorrectly After Containing Layout's Visibility is Toggled")]
     public partial class Bugzilla38416 : TestContentPage

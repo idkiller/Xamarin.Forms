@@ -26,9 +26,11 @@ namespace Xamarin.Forms.Platform.Android
 			UpdatePlaceholder();
 			UpdateKeyboard();
 			UpdateHorizontalTextAlignment();
+			UpdateVerticalTextAlignment();
 			UpdateText();
 			UpdateIsEnabled();
 			UpdateHeight();
+			UpdateFlowDirection();
 
 			_view.TextChanged = OnTextChanged;
 			_view.EditingCompleted = OnEditingCompleted;
@@ -38,6 +40,11 @@ namespace Xamarin.Forms.Platform.Android
 
 		protected override void OnCellPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
+			if (!_view.IsAlive())
+			{
+				return;
+			}
+
 			base.OnCellPropertyChanged(sender, e);
 
 			if (e.PropertyName == EntryCell.LabelProperty.PropertyName)
@@ -52,10 +59,17 @@ namespace Xamarin.Forms.Platform.Android
 				UpdateLabelColor();
 			else if (e.PropertyName == EntryCell.HorizontalTextAlignmentProperty.PropertyName)
 				UpdateHorizontalTextAlignment();
+			else if (e.PropertyName == EntryCell.VerticalTextAlignmentProperty.PropertyName)
+				UpdateVerticalTextAlignment();
 			else if (e.PropertyName == Cell.IsEnabledProperty.PropertyName)
 				UpdateIsEnabled();
 			else if (e.PropertyName == "RenderHeight")
 				UpdateHeight();
+			else if (e.PropertyName == VisualElement.FlowDirectionProperty.PropertyName)
+			{
+				UpdateFlowDirection();
+				UpdateHorizontalTextAlignment();
+			}
 		}
 
 		protected virtual NumberKeyListener GetDigitsKeyListener(InputTypes inputTypes)
@@ -86,7 +100,13 @@ namespace Xamarin.Forms.Platform.Android
 		void UpdateHorizontalTextAlignment()
 		{
 			var entryCell = (EntryCell)Cell;
-			_view.EditText.Gravity = entryCell.HorizontalTextAlignment.ToHorizontalGravityFlags();
+			_view.EditText.UpdateHorizontalAlignment(entryCell.HorizontalTextAlignment, _view.Context.HasRtlSupport());
+		}
+
+		void UpdateVerticalTextAlignment()
+		{
+			var entryCell = (EntryCell)Cell;
+			_view.EditText.UpdateVerticalAlignment(entryCell.VerticalTextAlignment);
 		}
 
 		void UpdateIsEnabled()
@@ -114,7 +134,12 @@ namespace Xamarin.Forms.Platform.Android
 
 		void UpdateLabelColor()
 		{
-			_view.SetLabelTextColor(((EntryCell)Cell).LabelColor, global::Android.Resource.Color.PrimaryTextDark);
+			_view.SetLabelTextColor(((EntryCell)Cell).LabelColor, global::Android.Resource.Attribute.TextColor);
+		}
+
+		void UpdateFlowDirection()
+		{
+			_view.UpdateFlowDirection(ParentView);
 		}
 
 		void UpdatePlaceholder()

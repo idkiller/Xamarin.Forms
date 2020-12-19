@@ -33,6 +33,12 @@ namespace Xamarin.Forms.Xaml.UnitTests
 			public void Setup()
 			{
 				Device.PlatformServices = new MockPlatformServices();
+
+				//there's a test not resetting the values correctly, but can't find which one...
+#pragma warning disable 0618
+				Xamarin.Forms.Internals.ResourceLoader.ExceptionHandler = null;
+				Xamarin.Forms.Xaml.Internals.XamlLoader.DoNotThrowOnExceptions = false;
+#pragma warning restore 0618
 			}
 
 			[TearDown]
@@ -45,10 +51,10 @@ namespace Xamarin.Forms.Xaml.UnitTests
 			[TestCase(true)]
 			public void ThrowOnInstanceProperty(bool useCompiledXaml)
 			{
-				if (!useCompiledXaml)
-					Assert.Throws(new XamlParseExceptionConstraint(7, 6), () => new XStaticException(useCompiledXaml));
+				if (useCompiledXaml)
+					Assert.Throws(new BuildExceptionConstraint(7, 6), () => MockCompiler.Compile(typeof(XStaticException)));
 				else
-					Assert.Throws(new XamlParseExceptionConstraint(7, 6), () => MockCompiler.Compile(typeof(XStaticException)));
+					Assert.Throws(new XamlParseExceptionConstraint(7, 6), () => new XStaticException(useCompiledXaml));
 			}
 		}
 	}

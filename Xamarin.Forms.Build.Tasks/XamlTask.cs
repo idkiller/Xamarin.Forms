@@ -13,27 +13,35 @@ using Xamarin.Forms.Xaml;
 using Mono.Cecil.Cil;
 using Mono.Cecil.Pdb;
 using Mono.Cecil.Mdb;
+using System.ComponentModel;
 
 namespace Xamarin.Forms.Build.Tasks
 {
-	public abstract class XamlTask : AppDomainIsolatedTask
+	[LoadInSeparateAppDomain]
+	public abstract class XamlTask : MarshalByRefObject, ITask
 	{
 		[Required]
 		public string Assembly { get; set; }
 		public string DependencyPaths { get; set; }
 		public string ReferencePath { get; set; }
+		[Obsolete("this is no longer used")]
+		[EditorBrowsable(EditorBrowsableState.Never)]
 		public int Verbosity { get; set; }
 		public bool DebugSymbols { get; set; }
+		public string DebugType { get; set; }
+
+		protected TaskLoggingHelper LoggingHelper { get; }
 
 		internal XamlTask()
 		{
+			LoggingHelper = new TaskLoggingHelper(this);
 		}
 
-		protected Logger Logger { get; set; }
+		public IBuildEngine BuildEngine { get; set; }
+		public ITaskHost HostObject { get; set; }
 
-		public override bool Execute()
+		public bool Execute()
 		{
-			Logger = new Logger(Log, Verbosity);
 			IList<Exception> _;
 			return Execute(out _);
 		}
@@ -54,7 +62,7 @@ namespace Xamarin.Forms.Build.Tasks
 					}
 
 					XamlParser.ParseXaml(
-						rootnode = new ILRootNode(new XmlType(reader.NamespaceURI, reader.Name, null), typeReference, reader as IXmlNamespaceResolver), reader);
+						rootnode = new ILRootNode(new XmlType(reader.NamespaceURI, reader.Name, null), typeReference, reader as IXmlNamespaceResolver, ((IXmlLineInfo)reader).LineNumber, ((IXmlLineInfo)reader).LinePosition), reader);
 					break;
 				}
 			}
@@ -64,29 +72,48 @@ namespace Xamarin.Forms.Build.Tasks
 
 	static class CecilExtensions
 	{
-		public static bool IsXaml(this EmbeddedResource resource, out string classname)
+		public static bool IsXaml(this EmbeddedResource resource, ModuleDefinition module, out string classname)
 		{
 			classname = null;
 			if (!resource.Name.EndsWith(".xaml", StringComparison.InvariantCulture))
 				return false;
 
-			using (var resourceStream = resource.GetResourceStream()) {
-				var xmlDoc = new XmlDocument();
-				xmlDoc.Load(resourceStream);
+			using (var resourceStream = resource.GetResourceStream())
+			using (var reader = XmlReader.Create(resourceStream))
+			{
+				// Read to the first Element
+				while (reader.Read() && reader.NodeType != XmlNodeType.Element) ;
 
-				var nsmgr = new XmlNamespaceManager(xmlDoc.NameTable);
-
-				var root = xmlDoc.SelectSingleNode("/*", nsmgr);
-				if (root == null)
+				if (reader.NodeType != XmlNodeType.Element)
 					return false;
 
-				var rootClass = root.Attributes ["Class", "http://schemas.microsoft.com/winfx/2006/xaml"] ??
-								root.Attributes ["Class", "http://schemas.microsoft.com/winfx/2009/xaml"];
-				if (rootClass == null)
-					return false;
-				classname = rootClass.Value;
-				return true;
+				classname = reader.GetAttribute("Class", XamlParser.X2009Uri) ??
+							reader.GetAttribute("Class", XamlParser.X2006Uri);
+				if (classname != null)
+					return true;
+
+				//no x:Class, but it might be a RD without x:Class and with <?xaml-comp compile="true" ?>
+				//in that case, it has a XamlResourceIdAttribute
+				var typeRef = GetTypeForResourceId(module, resource.Name);
+				if (typeRef != null) {
+					classname = typeRef.FullName;
+					return true;
+				}
+
+				return false;
 			}
+		}
+
+		static TypeReference GetTypeForResourceId(ModuleDefinition module, string resourceId)
+		{
+			foreach (var ca in module.GetCustomAttributes()) {
+				if (!TypeRefComparer.Default.Equals(ca.AttributeType, module.ImportReference(("Xamarin.Forms.Core", "Xamarin.Forms.Xaml", "XamlResourceIdAttribute"))))
+					continue;
+				if (ca.ConstructorArguments[0].Value as string != resourceId)
+					continue;
+				return ca.ConstructorArguments[2].Value as TypeReference;
+			}
+			return null;
 		}
 	}
 }

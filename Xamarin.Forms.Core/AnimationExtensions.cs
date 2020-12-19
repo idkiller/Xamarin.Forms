@@ -56,14 +56,7 @@ namespace Xamarin.Forms
 				AbortKinetic(key);
 			};
 
-			if (Device.IsInvokeRequired)
-			{
-				Device.BeginInvokeOnMainThread(abort);
-			}
-			else
-			{
-				abort();
-			}
+			DoAction(self, abort);
 
 			return true;
 		}
@@ -71,7 +64,18 @@ namespace Xamarin.Forms
 		public static void Animate(this IAnimatable self, string name, Animation animation, uint rate = 16, uint length = 250, Easing easing = null, Action<double, bool> finished = null,
 								   Func<bool> repeat = null)
 		{
-			self.Animate(name, animation.GetCallback(), rate, length, easing, finished, repeat);
+			if (repeat == null)
+				self.Animate(name, animation.GetCallback(), rate, length, easing, finished, null);
+			else {
+				Func<bool> r = () =>
+				{
+					var val = repeat();
+					if (val)
+						animation.ResetChildren();
+					return val;
+				};
+				self.Animate(name, animation.GetCallback(), rate, length, easing, finished, r);
+			}
 		}
 
 		public static void Animate(this IAnimatable self, string name, Action<double> callback, double start, double end, uint rate = 16, uint length = 250, Easing easing = null,
@@ -98,30 +102,14 @@ namespace Xamarin.Forms
 				throw new ArgumentNullException(nameof(self));
 
 			Action animate = () => AnimateInternal(self, name, transform, callback, rate, length, easing, finished, repeat);
-
-			if (Device.IsInvokeRequired)
-			{
-				Device.BeginInvokeOnMainThread(animate);
-			}
-			else
-			{
-				animate();
-			}
+			DoAction(self, animate);
 		}
 
 
 		public static void AnimateKinetic(this IAnimatable self, string name, Func<double, double, bool> callback, double velocity, double drag, Action finished = null)
 		{
 			Action animate = () => AnimateKineticInternal(self, name, callback, velocity, drag, finished);
-
-			if (Device.IsInvokeRequired)
-			{
-				Device.BeginInvokeOnMainThread(animate);
-			}
-			else
-			{
-				animate();
-			}
+			DoAction(self, animate);
 		}
 
 		public static bool AnimationIsRunning(this IAnimatable self, string handle)
@@ -136,20 +124,31 @@ namespace Xamarin.Forms
 			return x => start + (target - start) * x;
 		}
 
+		public static IDisposable Batch(this IAnimatable self) => new BatchObject(self);
+
 		static void AbortAnimation(AnimatableKey key)
 		{
-			if (!s_animations.ContainsKey(key))
+			// If multiple animations on the same view with the same name (IOW, the same AnimatableKey) are invoked
+			// asynchronously (e.g., from the `[Animate]To` methods in `ViewExtensions`), it's possible to get into 
+			// a situation where after invoking the `Finished` handler below `s_animations` will have a new `Info`
+			// object in it with the same AnimatableKey. We need to continue cancelling animations until that is no
+			// longer the case; thus, the `while` loop.
+
+			// If we don't cancel all of the animations popping in with this key, `AnimateInternal` will overwrite one
+			// of them with the new `Info` object, and the overwritten animation will never complete; any `await` for
+			// it will never return.
+
+			while (s_animations.ContainsKey(key))
 			{
-				return;
+				Info info = s_animations[key];
+
+				s_animations.Remove(key);
+
+				info.Tweener.ValueUpdated -= HandleTweenerUpdated;
+				info.Tweener.Finished -= HandleTweenerFinished;
+				info.Tweener.Stop();
+				info.Finished?.Invoke(1.0f, true);
 			}
-
-			Info info = s_animations[key];
-			info.Tweener.ValueUpdated -= HandleTweenerUpdated;
-			info.Tweener.Finished -= HandleTweenerFinished;
-			info.Tweener.Stop();
-			info.Finished?.Invoke(1.0f, true);
-
-			s_animations.Remove(key);
 		}
 
 		static void AbortKinetic(AnimatableKey key)
@@ -177,7 +176,7 @@ namespace Xamarin.Forms
 
 			var info = new Info { Rate = rate, Length = length, Easing = easing ?? Easing.Linear };
 
-			var tweener = new Tweener(info.Length);
+			var tweener = new Tweener(info.Length, info.Rate);
 			tweener.Handle = key;
 			tweener.ValueUpdated += HandleTweenerUpdated;
 			tweener.Finished += HandleTweenerFinished;
@@ -187,7 +186,7 @@ namespace Xamarin.Forms
 			info.Finished = final;
 			info.Repeat = repeat;
 			info.Owner = new WeakReference<IAnimatable>(self);
-
+			
 			s_animations[key] = info;
 
 			info.Callback(0.0f);
@@ -232,14 +231,18 @@ namespace Xamarin.Forms
 			Info info;
 			if (tweener != null && s_animations.TryGetValue(tweener.Handle, out info))
 			{
-				var repeat = false;
-				if (info.Repeat != null)
-					repeat = info.Repeat();
-
 				IAnimatable owner;
 				if (info.Owner.TryGetTarget(out owner))
 					owner.BatchBegin();
 				info.Callback(tweener.Value);
+
+				var repeat = false;
+
+				// If the Ticker has been disabled (e.g., by power save mode), then don't repeat the animation
+				var animationsEnabled = Ticker.Default.SystemEnabled;
+
+				if (info.Repeat != null && animationsEnabled)
+					repeat = info.Repeat();
 
 				if (!repeat)
 				{
@@ -248,7 +251,7 @@ namespace Xamarin.Forms
 					tweener.Finished -= HandleTweenerFinished;
 				}
 
-				info.Finished?.Invoke(tweener.Value, false);
+				info.Finished?.Invoke(tweener.Value, !animationsEnabled);
 
 				if (info.Owner.TryGetTarget(out owner))
 					owner.BatchCommit();
@@ -274,6 +277,32 @@ namespace Xamarin.Forms
 			}
 		}
 
+		static void DoAction(IAnimatable self, Action action)
+		{
+			if (self is BindableObject element)
+			{
+				if (element.Dispatcher.IsInvokeRequired)
+				{
+					element.Dispatcher.BeginInvokeOnMainThread(action);
+				}
+				else
+				{
+					action();
+				}
+
+				return;
+			}
+
+			if (Device.IsInvokeRequired)
+			{
+				Device.BeginInvokeOnMainThread(action);
+			}
+			else
+			{
+				action();
+			}
+		}
+
 		class Info
 		{
 			public Action<double> Callback;
@@ -288,6 +317,23 @@ namespace Xamarin.Forms
 			public WeakReference<IAnimatable> Owner { get; set; }
 
 			public uint Rate { get; set; }
+		}
+
+		sealed class BatchObject : IDisposable
+		{
+			IAnimatable _animatable;
+
+			public BatchObject(IAnimatable animatable)
+			{
+				_animatable = animatable;
+				_animatable?.BatchBegin();
+			}
+
+			public void Dispose()
+			{
+				_animatable?.BatchCommit();
+				_animatable = null;
+			}
 		}
 	}
 }

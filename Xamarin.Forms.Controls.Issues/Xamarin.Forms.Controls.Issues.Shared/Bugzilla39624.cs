@@ -2,8 +2,11 @@ using System.Diagnostics;
 using Xamarin.Forms.CustomAttributes;
 using Xamarin.Forms.Internals;
 
-namespace Xamarin.Forms.Controls
+namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
 	[Preserve (AllMembers = true)]
 	[Issue (IssueTracker.Bugzilla, 39624, "CarouselPage.Children Appear Out of Order", PlatformAffected.WinRT)]
 	public class Bugzilla39624 : TestCarouselPage

@@ -1,12 +1,18 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Threading.Tasks;
 using AppKit;
 
 namespace Xamarin.Forms.Platform.MacOS
 {
-	public class ImageRenderer : ViewRenderer<Image, NSImageView>
+	public class ImageRenderer : ViewRenderer<Image, NSImageView>, IImageVisualElementRenderer
 	{
 		bool _isDisposed;
+
+		public ImageRenderer()
+		{
+			ImageElementManager.Init(this);
+		}
 
 		protected override void Dispose(bool disposing)
 		{
@@ -18,6 +24,7 @@ namespace Xamarin.Forms.Platform.MacOS
 				NSImage oldUIImage;
 				if (Control != null && (oldUIImage = Control.Image) != null)
 				{
+					ImageElementManager.Dispose(this);
 					oldUIImage.Dispose();
 				}
 			}
@@ -27,91 +34,63 @@ namespace Xamarin.Forms.Platform.MacOS
 			base.Dispose(disposing);
 		}
 
-		protected override void OnElementChanged(ElementChangedEventArgs<Image> e)
+		protected override async void OnElementChanged(ElementChangedEventArgs<Image> e)
 		{
-			if (Control == null)
-			{
-				var imageView = new FormsNSImageView();
-				SetNativeControl(imageView);
-			}
-
 			if (e.NewElement != null)
 			{
-				SetAspect();
-				SetImage(e.OldElement);
-				SetOpacity();
+				if (Control == null)
+				{
+					var imageView = new FormsNSImageView();
+					SetNativeControl(imageView);
+				}
+
+				await TrySetImage(e.OldElement as Image);
 			}
 
 			base.OnElementChanged(e);
 		}
 
-		protected override void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
+		protected override async void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
 			base.OnElementPropertyChanged(sender, e);
+
 			if (e.PropertyName == Image.SourceProperty.PropertyName)
-				SetImage();
-			else if (e.PropertyName == Image.IsOpaqueProperty.PropertyName)
-				SetOpacity();
-			else if (e.PropertyName == Image.AspectProperty.PropertyName)
-				SetAspect();
+				await TrySetImage().ConfigureAwait(false);
 		}
 
-		void SetAspect()
+		protected virtual async Task TrySetImage(Image previous = null)
 		{
-			//TODO: Implement set Image Aspect
-			//Control.ContentMode = Element.Aspect.ToUIViewContentMode();
-		}
+			// By default we'll just catch and log any exceptions thrown by SetImage so they don't bring down
+			// the application; a custom renderer can override this method and handle exceptions from
+			// SetImage differently if it wants to
 
-		async void SetImage(Image oldElement = null)
-		{
-			var source = Element.Source;
-
-			if (oldElement != null)
+			try
 			{
-				var oldSource = oldElement.Source;
-				if (Equals(oldSource, source))
-					return;
-
-				var imageSource = oldSource as FileImageSource;
-				if (imageSource != null && source is FileImageSource && imageSource.File == ((FileImageSource)source).File)
-					return;
-
-				Control.Image = null;
+				await SetImage(previous).ConfigureAwait(false);
 			}
-
-			IImageSourceHandler handler;
-
-			((IImageController)Element).SetIsLoading(true);
-
-			if (source != null && (handler = Internals.Registrar.Registered.GetHandler<IImageSourceHandler>(source.GetType())) != null)
+			catch (Exception ex)
 			{
-				NSImage uiimage;
-				try
-				{
-					uiimage = await handler.LoadImageAsync(source, scale: (float)NSScreen.MainScreen.BackingScaleFactor);
-				}
-				catch (OperationCanceledException)
-				{
-					uiimage = null;
-				}
-
-				var imageView = Control;
-				if (imageView != null)
-					imageView.Image = uiimage;
-
-				if (!_isDisposed)
-					((IVisualElementController)Element).NativeSizeChanged();
+				Internals.Log.Warning(nameof(ImageRenderer), "Error loading image: {0}", ex);
 			}
-			else
-				Control.Image = null;
-
-			if (!_isDisposed)
-				((IImageController)Element).SetIsLoading(false);
+			finally
+			{
+				((IImageController)Element)?.SetIsLoading(false);
+			}
 		}
 
-		void SetOpacity()
+		protected async Task SetImage(Image oldElement = null)
 		{
-			(Control as FormsNSImageView)?.SetIsOpaque(Element.IsOpaque);
+			await ImageElementManager.SetImage(this, Element, oldElement).ConfigureAwait(false);
 		}
+
+		void IImageVisualElementRenderer.SetImage(NSImage image)
+		{
+			Control.Image = image;
+			Control.Animates = image != null && image.Representations().Length > 1;
+		}
+
+		bool IImageVisualElementRenderer.IsDisposed => _isDisposed;
+
+		NSImageView IImageVisualElementRenderer.GetImage() => Control;
 	}
 }

@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using System;
+using System.Threading.Tasks;
 
 namespace Xamarin.Forms.Core.UnitTests
 {
@@ -44,7 +45,7 @@ namespace Xamarin.Forms.Core.UnitTests
 			bool emitted = false;
 			cell.Appearing += (sender, args) => emitted = true;
 
-			((ICellController)cell).SendAppearing ();
+			cell.SendAppearing ();
 			Assert.True (emitted);
 			Assert.True (cell.OnAppearingSent);
 			Assert.False (cell.OnDisappearingSent);
@@ -58,7 +59,7 @@ namespace Xamarin.Forms.Core.UnitTests
 			bool emitted = false;
 			cell.Disappearing += (sender, args) => emitted = true;
 
-			((ICellController)cell).SendDisappearing ();
+			cell.SendDisappearing ();
 			Assert.True (emitted);
 			Assert.False (cell.OnAppearingSent);
 			Assert.True (cell.OnDisappearingSent);
@@ -153,13 +154,13 @@ namespace Xamarin.Forms.Core.UnitTests
 		}
 
 		[Test]
-		public async void ForceUpdateSizeCallsAreRateLimited()
+		public async Task ForceUpdateSizeCallsAreRateLimited()
 		{
 			var lv = new ListView { HasUnevenRows = true };
 			var cell = new ViewCell { Parent = lv };
 
 			int numberOfCalls = 0;
-			((ICellController)cell).ForceUpdateSizeRequested += (object sender, System.EventArgs e) => { numberOfCalls++; };
+			cell.ForceUpdateSizeRequested += (object sender, System.EventArgs e) => { numberOfCalls++; };
 
 			cell.ForceUpdateSize ();
 			cell.ForceUpdateSize ();
@@ -172,13 +173,13 @@ namespace Xamarin.Forms.Core.UnitTests
 		}
 
 		[Test]
-		public async void ForceUpdateSizeWillNotBeCalledIfParentIsNotAListViewWithUnevenRows ()
+		public async Task ForceUpdateSizeWillNotBeCalledIfParentIsNotAListViewWithUnevenRows ()
 		{
 			var lv = new ListView { HasUnevenRows = false };
 			var cell = new ViewCell { Parent = lv };
 
 			int numberOfCalls = 0;
-			((ICellController)cell).ForceUpdateSizeRequested += (object sender, System.EventArgs e) => { numberOfCalls++; };
+			cell.ForceUpdateSizeRequested += (object sender, System.EventArgs e) => { numberOfCalls++; };
 
 			cell.ForceUpdateSize ();
 

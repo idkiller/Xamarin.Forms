@@ -3,8 +3,11 @@ using Xamarin.Forms.Controls.Issues;
 using Xamarin.Forms.CustomAttributes;
 using Xamarin.Forms.Internals;
 
-namespace Xamarin.Forms.Controls
+namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Bugzilla, 42069, "Garbage Collector can not collect pages that use ImageSource as a StaticResource",
 		PlatformAffected.All)]
@@ -20,15 +23,14 @@ namespace Xamarin.Forms.Controls
 			if (!Application.Current.Resources.ContainsKey("SomeSmallImage"))
 			{
 				ImageSource smallImage;
-				switch (Device.RuntimePlatform) {
-				default:
-					smallImage = "coffee.png";
-					break;
-				case Device.WinPhone:
-				case Device.WinRT:
-				case Device.UWP:
-					smallImage = "bank.png";
-					break;
+				switch (Device.RuntimePlatform)
+				{
+					default:
+						smallImage = "coffee.png";
+						break;
+					case Device.UWP:
+						smallImage = "bank.png";
+						break;
 				}
 
 				Application.Current.Resources.Add("SomeSmallImage", smallImage);
@@ -55,9 +57,7 @@ namespace Xamarin.Forms.Controls
 			var collectButton = new Button { Text = "Collect" };
 			collectButton.Clicked += (sender, args) =>
 			{
-				GC.Collect();
-				GC.Collect();
-				GC.Collect();
+				GarbageCollectionHelper.Collect();
 			};
 
 			var startPage = new ContentPage

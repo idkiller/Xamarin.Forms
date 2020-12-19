@@ -13,21 +13,25 @@ using NUnit.Framework;
 
 namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Bugzilla, 35132, "Pages are not collected when using a Navigationpage (FormsApplicationActivity)")]
 	public class Bugzilla35132 : TestNavigationPage
 	{
 		protected override void Init()
 		{
-			PushAsync(new RootPage());
+			PushAsync(new _35132RootPage());
 		}
 
 		[Preserve(AllMembers = true)]
 		public class BugPage : ContentPage
 		{
 			public static int Livecount;
+			public static int Pushedcount;
 
-			public BugPage(IEnumerable<string> items)
+			public BugPage()
 			{
 				Interlocked.Increment(ref Livecount);
 
@@ -35,10 +39,11 @@ namespace Xamarin.Forms.Controls.Issues
 				{
 					Children =
 					{
-						new Label { Text = items.Count() < 3 ? "Running" : Livecount < 3 ? "Success" : "Failure" },
-						new ListView { ItemsSource = items }
+						new Label { Text =  Pushedcount < 2 ? "Testing..." : Livecount < 3 ? "Success" : "Failure" },
 					}
 				};
+
+				Interlocked.Increment(ref Pushedcount);
 			}
 
 			~BugPage()
@@ -49,11 +54,9 @@ namespace Xamarin.Forms.Controls.Issues
 		}
 
 		[Preserve(AllMembers = true)]
-		public class RootPage : ContentPage
+		public class _35132RootPage : ContentPage
 		{
-			readonly List<string> _items = new List<string>();
-
-			public RootPage()
+			public _35132RootPage()
 			{
 				var button = new Button { Text = "Open" };
 				button.Clicked += Button_Clicked;
@@ -63,27 +66,27 @@ namespace Xamarin.Forms.Controls.Issues
 			async void Button_Clicked(object sender, EventArgs e)
 			{
 				Debug.WriteLine(">>>>>>>> Invoking Garbage Collector");
-				GC.Collect();
-				GC.WaitForPendingFinalizers();
+				GarbageCollectionHelper.Collect();
 
-				_items.Add((BugPage.Livecount).ToString());
-				await Navigation.PushAsync(new BugPage(_items));
+				await Navigation.PushAsync(new BugPage());
 			}
 		}
 
-#if UITEST 
+#if UITEST
 		[Test]
-		public void Issue1Test ()
+		public void PagesAreCollected()
 		{
-			RunningApp.WaitForElement (q => q.Marked ("Open"));
-			RunningApp.Tap(q => q.Marked ("Open"));
+			RunningApp.WaitForElement(q => q.Marked("Open"));
+			RunningApp.Tap(q => q.Marked("Open"));
+			RunningApp.WaitForElement(q => q.Marked("Testing..."));
 			RunningApp.Back();
-			RunningApp.WaitForElement (q => q.Marked ("Open"));
-			RunningApp.Tap(q => q.Marked ("Open"));
+			RunningApp.WaitForElement(q => q.Marked("Open"));
+			RunningApp.Tap(q => q.Marked("Open"));
+			RunningApp.WaitForElement(q => q.Marked("Testing..."));
 			RunningApp.Back();
-			RunningApp.WaitForElement (q => q.Marked ("Open"));
-			RunningApp.Tap(q => q.Marked ("Open"));
-			RunningApp.WaitForElement (q => q.Marked ("Success"));
+			RunningApp.WaitForElement(q => q.Marked("Open"));
+			RunningApp.Tap(q => q.Marked("Open"));
+			RunningApp.WaitForElement(q => q.Marked("Success"));
 		}
 #endif
 	}

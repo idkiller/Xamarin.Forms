@@ -5,11 +5,12 @@ using Xamarin.Forms.Internals;
 #if UITEST
 using NUnit.Framework;
 using Xamarin.UITest;
+using Xamarin.Forms.Core.UITests;
 #endif
 
 namespace Xamarin.Forms.Controls.Issues
 {
-	[Preserve (AllMembers = true)]
+	[Preserve(AllMembers = true)]
 	public class FamilyViewModel
 	{
 		public Guid ProfileId { get; set; }
@@ -18,7 +19,7 @@ namespace Xamarin.Forms.Controls.Issues
 		public string BonusBalance { get; set; }
 		public string MemberNo { get; set; }
 
-		public FamilyViewModel ()
+		public FamilyViewModel()
 		{
 			ProfileId = Guid.Empty;
 			DisplayName = "";
@@ -28,73 +29,82 @@ namespace Xamarin.Forms.Controls.Issues
 		}
 	}
 
-	[Preserve (AllMembers = true)]
+	[Preserve(AllMembers = true)]
 	public class FamilyCell : ViewCell
 	{
 		public Label FamilyLabel;
 
-		public FamilyCell ()
+		public FamilyCell()
 		{
-			FamilyLabel = new Label ();
+			FamilyLabel = new Label();
 
-			var l1 = new RelativeLayout ();
+			var l1 = new RelativeLayout();
 
-			l1.Children.Add (FamilyLabel,
-			                 Constraint.Constant (50),
-			                 Constraint.Constant (4),
-			                 Constraint.RelativeToParent (p => p.Width - 10 - 50 - 85)
+			l1.Children.Add(FamilyLabel,
+							 Constraint.Constant(50),
+							 Constraint.Constant(4),
+							 Constraint.RelativeToParent(p => p.Width - 10 - 50 - 85)
 				);
 
 
 			View = l1;
 
-			FamilyLabel.SetBinding (Label.TextProperty, "DisplayName");
+			FamilyLabel.SetBinding(Label.TextProperty, "DisplayName");
 
 			// COMMENT LINE BELOW OUT TO MAKE IT WORK!
-			AddContextActions ();
+			AddContextActions();
 		}
 
-		void AddContextActions ()
+		void AddContextActions()
 		{
-			ContextActions.Add (new MenuItem () {
+			ContextActions.Add(new MenuItem()
+			{
 				Text = "Delete",
 				IsDestructive = true,
-				Command = new Command (Delete)
+				Command = new Command(Delete)
 			});
 
-			ContextActions.Add (new MenuItem () {
+			ContextActions.Add(new MenuItem()
+			{
 				Text = "More",
 				IsDestructive = false,
-				Command = new Command (More)
+				Command = new Command(More)
 			});
 		}
 
-		void Delete ()
+		void Delete()
 		{
 		}
 
-		void More ()
+		void More()
 		{
 		}
 	}
 
-	[Preserve (AllMembers=true)]
-	[Issue (IssueTracker.Bugzilla, 26501, "BindingSource / Context action issue", PlatformAffected.iOS)]
+#if UITEST
+	[Category(UITestCategories.InputTransparent)]
+	[Category(UITestCategories.UwpIgnore)]
+	[Category(UITestCategories.Bugzilla)]
+#endif
+	[Preserve(AllMembers = true)]
+	[Issue(IssueTracker.Bugzilla, 26501, "BindingSource / Context action issue", PlatformAffected.iOS)]
 	public class Bugzilla26501 : TestContentPage
 	{
-		protected override void Init ()
+		protected override void Init()
 		{
 			//TODO: Multilanguage
 			Title = "Context Action Bug";
 
-			_familyListView = new ListView () {
+			_familyListView = new ListView()
+			{
 				RowHeight = 50,
-				ItemTemplate = new DataTemplate (typeof (FamilyCell)),
+				ItemTemplate = new DataTemplate(typeof(FamilyCell)),
 				HasUnevenRows = true
 			};
 
 			//TODO: Multilanguage
-			ToolbarItems.Add (new ToolbarItem ("Refresh", "", () => {
+			ToolbarItems.Add(new ToolbarItem("Refresh", "", () =>
+			{
 				_familyListView.ItemsSource = _demoDataSource2;
 			}));
 
@@ -103,7 +113,7 @@ namespace Xamarin.Forms.Controls.Issues
 
 			Content = _familyListView;
 
-			UpdateData ();
+			UpdateData();
 		}
 
 		readonly FamilyViewModel[] _demoDataSource = new FamilyViewModel[] {
@@ -114,7 +124,7 @@ namespace Xamarin.Forms.Controls.Issues
 		};
 
 		readonly FamilyViewModel[] _demoDataSource2 = new FamilyViewModel[] {
-			new FamilyViewModel {DisplayName = "ZOOMER robothund"},
+			new FamilyViewModel {DisplayName = "ZOOMER robothund 2"},
 			new FamilyViewModel {DisplayName = "FROST sengetøj"},
 			new FamilyViewModel {DisplayName = "BEADOS Quick Dry designstation"},
 			new FamilyViewModel {DisplayName = "Redningsstation i junglen"},
@@ -127,23 +137,18 @@ namespace Xamarin.Forms.Controls.Issues
 
 		ListView _familyListView;
 
-		List<FamilyViewModel> _itemSource;
-
-		void UpdateData ()
+		void UpdateData()
 		{
-			Device.BeginInvokeOnMainThread (() => _familyListView.ItemsSource = _demoDataSource);
+			Device.BeginInvokeOnMainThread(() => _familyListView.ItemsSource = _demoDataSource);
 		}
 
 #if UITEST
 		[Test]
 		public void TestCellsShowAfterRefresh()
 		{
-			RunningApp.Tap (q => q.Marked ("Refresh"));
+			RunningApp.Tap(q => q.Marked("Refresh"));
 
-			// make sure the refresh has completed
-			System.Threading.Thread.Sleep (1);
-
-			RunningApp.WaitForElement (q => q.Marked ("ZOOMER robothund"));
+			RunningApp.WaitForElement(q => q.Marked("ZOOMER robothund 2"));
 		}
 #endif
 	}

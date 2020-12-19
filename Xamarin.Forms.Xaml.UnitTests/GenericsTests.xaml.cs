@@ -9,6 +9,8 @@ namespace Xamarin.Forms.Xaml.UnitTests
 {
 	public partial class GenericsTests : ContentPage
 	{
+		public List<string> P { get; set; }
+
 		public GenericsTests ()
 		{
 			InitializeComponent ();
@@ -56,7 +58,14 @@ namespace Xamarin.Forms.Xaml.UnitTests
 			{
 				var layout = new GenericsTests (useCompiledXaml);
 				var list = layout.FindByName<List<Button>> ("myList");
-				Assert.NotNull (list);
+				Assert.That(list, Is.Not.Null);
+				Assert.That(list, Is.TypeOf<List<Button>>());
+
+				var nestedGenericList = layout.TestListMember;
+				Assert.That(nestedGenericList, Is.Not.Null);
+				Assert.That(nestedGenericList, Is.TypeOf<List<KeyValuePair<string, string>>>());
+
+				Assert.That(nestedGenericList.Count, Is.EqualTo(1));
 			}
 
 			[TestCase (false)]
@@ -64,6 +73,9 @@ namespace Xamarin.Forms.Xaml.UnitTests
 			public void TestGenericParsing (bool useCompiledXaml)
 			{
 				var layout = new GenericsTests (useCompiledXaml);
+
+				Assert.NotNull (layout.P);
+
 				var list = layout.Resources ["list"];
 				Assert.NotNull (list);
 				Assert.That (list, Is.TypeOf<List<String>> ());
@@ -72,9 +84,9 @@ namespace Xamarin.Forms.Xaml.UnitTests
 				Assert.NotNull (dict);
 				Assert.That (dict, Is.TypeOf<Dictionary<string,string>> ());
 
-				var queue = layout.Resources ["queue"];
+				var queue = layout.Resources ["genericsquaredlist"];
 				Assert.NotNull (dict);
-				Assert.That (queue, Is.TypeOf<Queue<KeyValuePair<string,string>>> ());
+				Assert.That (queue, Is.TypeOf<List<KeyValuePair<string,string>>> ());
 			}
 
 			[TestCase (false)]

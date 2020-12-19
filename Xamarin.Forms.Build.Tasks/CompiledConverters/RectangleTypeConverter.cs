@@ -6,15 +6,18 @@ using Mono.Cecil;
 using Mono.Cecil.Cil;
 
 using Xamarin.Forms.Xaml;
+using Xamarin.Forms.Build.Tasks;
 
 namespace Xamarin.Forms.Core.XamlC
 {
 	class RectangleTypeConverter : ICompiledTypeConverter
 	{
-		public IEnumerable<Instruction> ConvertFromString(string value, ModuleDefinition module, BaseNode node)
+		public IEnumerable<Instruction> ConvertFromString(string value, ILContext context, BaseNode node)
 		{
+			var module = context.Body.Method.Module;
+
 			if (string.IsNullOrEmpty(value))
-				throw new XamlParseException($"Cannot convert \"{value}\" into {typeof(Rectangle)}", node);
+				throw new BuildException(BuildExceptionCode.Conversion, node, null, value, typeof(Rectangle));
 			double x, y, w, h;
 			var xywh = value.Split(',');
 			if (xywh.Length != 4 ||
@@ -22,7 +25,7 @@ namespace Xamarin.Forms.Core.XamlC
 				!double.TryParse(xywh [1], NumberStyles.Number, CultureInfo.InvariantCulture, out y) ||
 				!double.TryParse(xywh [2], NumberStyles.Number, CultureInfo.InvariantCulture, out w) ||
 				!double.TryParse(xywh [3], NumberStyles.Number, CultureInfo.InvariantCulture, out h))
-				throw new XamlParseException($"Cannot convert \"{value}\" into {typeof(Rectangle)}", node);
+				throw new BuildException(BuildExceptionCode.Conversion, node, null, value, typeof(Rectangle));
 
 			return GenerateIL(x, y, w, h, module);
 		}
@@ -39,10 +42,11 @@ namespace Xamarin.Forms.Core.XamlC
 			yield return Instruction.Create(OpCodes.Ldc_R8, y);
 			yield return Instruction.Create(OpCodes.Ldc_R8, w);
 			yield return Instruction.Create(OpCodes.Ldc_R8, h);
-
-			var rectangleCtor = module.ImportReference(typeof(Rectangle)).Resolve().Methods.FirstOrDefault(md => md.IsConstructor && md.Parameters.Count == 4);
-			var rectangleCtorRef = module.ImportReference(rectangleCtor);
-			yield return Instruction.Create(OpCodes.Newobj, rectangleCtorRef);
+			yield return Instruction.Create(OpCodes.Newobj, module.ImportCtorReference(("Xamarin.Forms.Core", "Xamarin.Forms", "Rectangle"), parameterTypes: new[] {
+				("mscorlib", "System", "Double"),
+				("mscorlib", "System", "Double"),
+				("mscorlib", "System", "Double"),
+				("mscorlib", "System", "Double")}));
 		}
 	}
 }

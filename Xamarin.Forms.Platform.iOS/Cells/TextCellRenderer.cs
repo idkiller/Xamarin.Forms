@@ -1,26 +1,32 @@
 using System.ComponentModel;
+using Foundation;
 using UIKit;
 
 namespace Xamarin.Forms.Platform.iOS
 {
 	public class TextCellRenderer : CellRenderer
 	{
-		static readonly Color DefaultDetailColor = new Color(.32, .4, .57);
-		static readonly Color DefaultTextColor = Color.Black;
+		readonly Color DefaultDetailColor = ColorExtensions.SecondaryLabelColor.ToColor();
+		readonly Color DefaultTextColor = ColorExtensions.LabelColor.ToColor();
+
+		[Preserve(Conditional = true)]
+		public TextCellRenderer()
+		{
+		}
 
 		public override UITableViewCell GetCell(Cell item, UITableViewCell reusableCell, UITableView tv)
 		{
 			var textCell = (TextCell)item;
 
-			var tvc = reusableCell as CellTableViewCell;
-			if (tvc == null)
+			if (!(reusableCell is CellTableViewCell tvc))
 				tvc = new CellTableViewCell(UITableViewCellStyle.Subtitle, item.GetType().FullName);
 			else
-				tvc.Cell.PropertyChanged -= tvc.HandlePropertyChanged;
+				tvc.PropertyChanged -= HandleCellPropertyChanged;
+
+			SetRealCell(item, tvc);
 
 			tvc.Cell = textCell;
-			textCell.PropertyChanged += tvc.HandlePropertyChanged;
-			tvc.PropertyChanged = HandlePropertyChanged;
+			tvc.PropertyChanged = HandleCellPropertyChanged;
 
 			tvc.TextLabel.Text = textCell.Text;
 			tvc.DetailTextLabel.Text = textCell.Detail;
@@ -33,13 +39,17 @@ namespace Xamarin.Forms.Platform.iOS
 
 			UpdateBackground(tvc, item);
 
+			SetAccessibility(tvc, item);
+			UpdateAutomationId(tvc, textCell);
+
 			return tvc;
 		}
 
-		protected virtual void HandlePropertyChanged(object sender, PropertyChangedEventArgs args)
+		protected virtual void HandleCellPropertyChanged(object sender, PropertyChangedEventArgs args)
 		{
-			var tvc = (CellTableViewCell)sender;
-			var textCell = (TextCell)tvc.Cell;
+			var textCell = (TextCell)sender;
+			var tvc = (CellTableViewCell)GetRealCell(textCell);
+
 			if (args.PropertyName == TextCell.TextProperty.PropertyName)
 			{
 				tvc.TextLabel.Text = ((TextCell)tvc.Cell).Text;
@@ -56,6 +66,20 @@ namespace Xamarin.Forms.Platform.iOS
 				tvc.DetailTextLabel.TextColor = textCell.DetailColor.ToUIColor(DefaultTextColor);
 			else if (args.PropertyName == Cell.IsEnabledProperty.PropertyName)
 				UpdateIsEnabled(tvc, textCell);
+			else if (args.PropertyName == TextCell.AutomationIdProperty.PropertyName)
+				UpdateAutomationId(tvc, textCell);
+
+			HandlePropertyChanged(tvc, args);
+		}
+		void UpdateAutomationId(CellTableViewCell tvc, TextCell cell)
+		{
+			tvc.AccessibilityIdentifier = cell.AutomationId;
+		}
+
+		protected virtual void HandlePropertyChanged(object sender, PropertyChangedEventArgs args)
+		{
+			//keeping this method for backwards compatibility 
+			//as the the sender for this method is a CellTableViewCell
 		}
 
 		static void UpdateIsEnabled(CellTableViewCell cell, TextCell entryCell)

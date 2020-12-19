@@ -7,6 +7,7 @@ using AppKit;
 using CoreAnimation;
 using Foundation;
 using Xamarin.Forms.Internals;
+using Xamarin.Forms.PlatformConfiguration.macOSSpecific;
 
 namespace Xamarin.Forms.Platform.MacOS
 {
@@ -18,11 +19,7 @@ namespace Xamarin.Forms.Platform.MacOS
 		VisualElementTracker _tracker;
 		Stack<NavigationChildPageWrapper> _currentStack = new Stack<NavigationChildPageWrapper>();
 
-		IPageController PageController => Element as IPageController;
-
-		IElementController ElementController => Element as IElementController;
-
-		INavigationPageController NavigationController => Element as INavigationPageController;
+		NavigationPage NavigationPage => Element as NavigationPage;
 
 		void IEffectControlProvider.RegisterEffect(Effect effect)
 		{
@@ -60,7 +57,7 @@ namespace Xamarin.Forms.Platform.MacOS
 
 			Init();
 
-			OnElementChanged(new VisualElementChangedEventArgs(oldElement, element));
+			RaiseElementChanged(new VisualElementChangedEventArgs(oldElement, element));
 
 			EffectUtilities.RegisterEffectControlProvider(this, oldElement, element);
 		}
@@ -89,11 +86,28 @@ namespace Xamarin.Forms.Platform.MacOS
 		{
 			if (!_disposed && disposing)
 			{
+
+				_disposed = true;
+
 				if (Element != null)
 				{
-					PageController?.SendDisappearing();
-					((Element as IPageContainer<Page>)?.CurrentPage as IPageController)?.SendDisappearing();
-					Element.PropertyChanged -= HandlePropertyChanged;
+					if (NavigationPage != null)
+					{
+						NavigationPage.PushRequested -= OnPushRequested;
+						NavigationPage.PopRequested -= OnPopRequested;
+						NavigationPage.PopToRootRequested -= OnPopToRootRequested;
+						NavigationPage.RemovePageRequested -= OnRemovedPageRequested;
+						NavigationPage.InsertPageBeforeRequested -= OnInsertPageBeforeRequested;
+						NavigationPage.Popped -= OnPopped;
+						NavigationPage.PoppedToRoot -= OnPoppedToRoot;
+
+						NavigationPage.SendDisappearing();
+
+						Platform.NativeToolbarTracker.TryHide(NavigationPage);
+					}
+					((Element as IPageContainer<Page>)?.CurrentPage as Page)?.SendDisappearing();
+					Element.PropertyChanged -= OnElementPropertyChanged;
+					Platform.SetRenderer(Element, null);
 					Element = null;
 				}
 
@@ -103,7 +117,15 @@ namespace Xamarin.Forms.Platform.MacOS
 				_events?.Dispose();
 				_events = null;
 
-				_disposed = true;
+				if(_currentStack != null)
+				{
+					foreach (var childPageWrapper in _currentStack)
+					{
+						childPageWrapper.Dispose();
+					}
+					_currentStack.Clear();
+					_currentStack = null;
+				}
 			}
 			base.Dispose(disposing);
 		}
@@ -115,7 +137,7 @@ namespace Xamarin.Forms.Platform.MacOS
 				return;
 			Platform.NativeToolbarTracker.TryHide(Element as NavigationPage);
 			_appeared = false;
-			PageController?.SendDisappearing();
+			NavigationPage?.SendDisappearing();
 		}
 
 		public override void ViewDidAppear()
@@ -126,18 +148,23 @@ namespace Xamarin.Forms.Platform.MacOS
 				return;
 
 			_appeared = true;
-			PageController?.SendAppearing();
+			NavigationPage?.SendAppearing();
+		}
+
+		void RaiseElementChanged(VisualElementChangedEventArgs e)
+		{
+			if (e.OldElement != null)
+				e.OldElement.PropertyChanged -= OnElementPropertyChanged;
+
+			if (e.NewElement != null)
+				e.NewElement.PropertyChanged += OnElementPropertyChanged;
+
+			OnElementChanged(e);
+			ElementChanged?.Invoke(this, e);
 		}
 
 		protected virtual void OnElementChanged(VisualElementChangedEventArgs e)
 		{
-			if (e.OldElement != null)
-				e.OldElement.PropertyChanged -= HandlePropertyChanged;
-
-			if (e.NewElement != null)
-				e.NewElement.PropertyChanged += HandlePropertyChanged;
-
-			ElementChanged?.Invoke(this, e);
 		}
 
 		protected virtual void ConfigurePageRenderer()
@@ -173,22 +200,19 @@ namespace Xamarin.Forms.Platform.MacOS
 		{
 			ConfigurePageRenderer();
 
-			var navPage = (NavigationPage)Element;
-
-			if (navPage.CurrentPage == null)
+			if (NavigationPage.CurrentPage == null)
 				throw new InvalidOperationException(
 					"NavigationPage must have a root Page before being used. Either call PushAsync with a valid Page, or pass a Page to the constructor before usage.");
 
-			Platform.NativeToolbarTracker.Navigation = navPage;
+			Platform.NativeToolbarTracker.Navigation = NavigationPage;
 
-			NavigationController.PushRequested += OnPushRequested;
-			NavigationController.PopRequested += OnPopRequested;
-			NavigationController.PopToRootRequested += OnPopToRootRequested;
-			NavigationController.RemovePageRequested += OnRemovedPageRequested;
-			NavigationController.InsertPageBeforeRequested += OnInsertPageBeforeRequested;
-
-			navPage.Popped += (sender, e) => Platform.NativeToolbarTracker.UpdateToolBar();
-			navPage.PoppedToRoot += (sender, e) => Platform.NativeToolbarTracker.UpdateToolBar();
+			NavigationPage.PushRequested += OnPushRequested;
+			NavigationPage.PopRequested += OnPopRequested;
+			NavigationPage.PopToRootRequested += OnPopToRootRequested;
+			NavigationPage.RemovePageRequested += OnRemovedPageRequested;
+			NavigationPage.InsertPageBeforeRequested += OnInsertPageBeforeRequested;
+			NavigationPage.Popped += OnPopped;
+			NavigationPage.PoppedToRoot += OnPoppedToRoot;
 
 			UpdateBarBackgroundColor();
 			UpdateBarTextColor();
@@ -197,7 +221,7 @@ namespace Xamarin.Forms.Platform.MacOS
 			_events.LoadEvents(NativeView);
 			_tracker = new VisualElementTracker(this);
 
-			((INavigationPageController)navPage).Pages.ForEach(async p => await PushPageAsync(p, false));
+			NavigationPage.Pages.ForEach(async p => await PushPageAsync(p, false));
 
 			UpdateBackgroundColor();
 		}
@@ -211,18 +235,45 @@ namespace Xamarin.Forms.Platform.MacOS
 			return pageRenderer;
 		}
 
-		//TODO: Implement InserPageBefore
+		void OnPopped(object sender, NavigationEventArgs e)
+		{
+			Platform.NativeToolbarTracker.UpdateToolBar();
+		}
+
+		void OnPoppedToRoot(object sender, NavigationEventArgs e)
+		{
+			Platform.NativeToolbarTracker.UpdateToolBar();
+		}
+
 		void InsertPageBefore(Page page, Page before)
 		{
 			if (before == null)
 				throw new ArgumentNullException(nameof(before));
 			if (page == null)
 				throw new ArgumentNullException(nameof(page));
+
+			var currentList = _currentStack.Reverse().ToList();
+			var beforePageIndex = currentList.IndexOf(p => p.Page == before);
+			var pageWrapper = new NavigationChildPageWrapper(page);
+			currentList.Insert(beforePageIndex, pageWrapper);
+			_currentStack = new Stack<NavigationChildPageWrapper>(currentList);
+
+			var vc = CreateViewControllerForPage(page);
+			vc.SetElementSize(new Size(View.Bounds.Width, View.Bounds.Height));
+			page.Layout(new Rectangle(0, 0, View.Bounds.Width, View.Frame.Height));
+			vc.NativeView.WantsLayer = true;
+
+			var beforeRenderer = Platform.GetRenderer(before);
+			var beforeControllerIndex = ChildViewControllers.IndexOf(beforeRenderer.ViewController);
+
+			InsertChildViewController(vc.ViewController, beforeControllerIndex);
+			View.AddSubview(vc.NativeView, NSWindowOrderingMode.Below, beforeRenderer.NativeView);
 		}
 
 		void OnInsertPageBeforeRequested(object sender, NavigationRequestedEventArgs e)
 		{
 			InsertPageBefore(e.Page, e.BeforePage);
+			Platform.NativeToolbarTracker.UpdateNavigationItems(true);
 		}
 
 		void OnPopRequested(object sender, NavigationRequestedEventArgs e)
@@ -248,22 +299,39 @@ namespace Xamarin.Forms.Platform.MacOS
 
 		void RemovePage(Page page, bool removeFromStack)
 		{
-			(page as IPageController)?.SendDisappearing();
+			page?.SendDisappearing();
 			var target = Platform.GetRenderer(page);
 			target?.NativeView?.RemoveFromSuperview();
 			target?.ViewController?.RemoveFromParentViewController();
 			target?.Dispose();
 			if (removeFromStack)
 			{
-				var newStack = new Stack<NavigationChildPageWrapper>();
-				foreach (var stack in _currentStack)
-				{
-					if (stack.Page != page)
-					{
-						newStack.Push(stack);
-					}
-				}
-				_currentStack = newStack;
+				var newSource = _currentStack.Reverse().Where(w => w.Page != page);
+				_currentStack = new Stack<NavigationChildPageWrapper>(newSource);
+			}
+		}
+
+		NSViewControllerTransitionOptions ToViewControllerTransitionOptions(NavigationTransitionStyle transitionStyle)
+		{
+			switch (transitionStyle)
+			{
+				case NavigationTransitionStyle.Crossfade:
+					return NSViewControllerTransitionOptions.Crossfade;
+				case NavigationTransitionStyle.SlideBackward:
+					return NSViewControllerTransitionOptions.SlideBackward;
+				case NavigationTransitionStyle.SlideDown:
+					return NSViewControllerTransitionOptions.SlideDown;
+				case NavigationTransitionStyle.SlideForward:
+					return NSViewControllerTransitionOptions.SlideForward;
+				case NavigationTransitionStyle.SlideLeft:
+					return NSViewControllerTransitionOptions.SlideLeft;
+				case NavigationTransitionStyle.SlideRight:
+					return NSViewControllerTransitionOptions.SlideRight;
+				case NavigationTransitionStyle.SlideUp:
+					return NSViewControllerTransitionOptions.SlideUp;
+
+				default:
+					return NSViewControllerTransitionOptions.None;
 			}
 		}
 
@@ -277,16 +345,19 @@ namespace Xamarin.Forms.Platform.MacOS
 				throw new NotSupportedException("Popped page does not appear on top of current navigation stack, please file a bug.");
 
 			_currentStack.Pop();
-			(page as IPageController)?.SendDisappearing();
+			page.SendDisappearing();
 
 			var target = Platform.GetRenderer(page);
 			var previousPage = _currentStack.Peek().Page;
 
+			var previousPageRenderer = CreateViewControllerForPage(previousPage);
+			ShowView(previousPageRenderer.ViewController);
 			if (animated)
 			{
-				var previousPageRenderer = Platform.GetRenderer(previousPage);
+				var transitionStyle = NavigationPage.OnThisPlatform().GetNavigationTransitionPopStyle();
+
 				return await this.HandleAsyncAnimation(target.ViewController, previousPageRenderer.ViewController,
-					NSViewControllerTransitionOptions.SlideBackward, () => Platform.DisposeRendererAndChildren(target), true);
+					ToViewControllerTransitionOptions(transitionStyle), () => target.DisposeRendererAndChildren(), true);
 			}
 
 			RemovePage(page, false);
@@ -313,12 +384,34 @@ namespace Xamarin.Forms.Platform.MacOS
 				vc.NativeView.WantsLayer = true;
 				AddChildViewController(vc.ViewController);
 				View.AddSubview(vc.NativeView);
+				if (oldPage != null)
+				{
+					HideView(Platform.GetRenderer(oldPage)?.ViewController);
+				}
 				return true;
 			}
 			var vco = Platform.GetRenderer(oldPage);
 			AddChildViewController(vc.ViewController);
+
+            var transitionStyle = NavigationPage.OnThisPlatform().GetNavigationTransitionPushStyle();
 			return await this.HandleAsyncAnimation(vco.ViewController, vc.ViewController,
-				NSViewControllerTransitionOptions.SlideForward, () => (page as IPageController)?.SendAppearing(), true);
+				ToViewControllerTransitionOptions(transitionStyle), () =>
+				{
+					HideView(vco.ViewController);
+					page?.SendAppearing();
+				}, true);
+		}
+
+		void HideView(NSViewController vc)
+		{
+			if (vc?.View != null)
+				vc.View.Hidden = true;
+		}
+
+		void ShowView(NSViewController vc)
+		{
+			if (vc?.View != null)
+				vc.View.Hidden = false;
 		}
 
 		void UpdateBackgroundColor()
@@ -338,18 +431,26 @@ namespace Xamarin.Forms.Platform.MacOS
 		{
 			Platform.NativeToolbarTracker.UpdateToolBar();
 		}
+		void UpdateBackButtonTitle()
+		{
+			Platform.NativeToolbarTracker.UpdateToolBar();
+		}
 
-		void HandlePropertyChanged(object sender, PropertyChangedEventArgs e)
+		protected virtual void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
 			if (_tracker == null)
 				return;
 
-			if (e.PropertyName == NavigationPage.BarBackgroundColorProperty.PropertyName)
+			if (e.PropertyName == Xamarin.Forms.NavigationPage.BarBackgroundColorProperty.PropertyName)
 				UpdateBarBackgroundColor();
-			else if (e.PropertyName == NavigationPage.BarTextColorProperty.PropertyName)
+			else if (e.PropertyName == Xamarin.Forms.NavigationPage.BarTextColorProperty.PropertyName)
 				UpdateBarTextColor();
 			else if (e.PropertyName == VisualElement.BackgroundColorProperty.PropertyName)
 				UpdateBackgroundColor();
+			else if (e.PropertyName == NavigationPage.BackButtonTitleProperty.PropertyName)
+			{
+				UpdateBackButtonTitle();
+			}
 		}
 	}
 }

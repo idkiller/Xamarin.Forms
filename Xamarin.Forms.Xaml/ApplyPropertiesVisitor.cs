@@ -5,16 +5,16 @@ using System.Linq;
 using System.Reflection;
 using System.Xml;
 using Xamarin.Forms.Internals;
+using Xamarin.Forms.Xaml.Diagnostics;
 using Xamarin.Forms.Xaml.Internals;
 
 using static System.String;
 
 namespace Xamarin.Forms.Xaml
 {
-	internal class ApplyPropertiesVisitor : IXamlNodeVisitor
+	class ApplyPropertiesVisitor : IXamlNodeVisitor
 	{
-		public static readonly IList<XmlName> Skips = new List<XmlName>
-		{
+		public static readonly IList<XmlName> Skips = new List<XmlName> {
 			XmlName.xKey,
 			XmlName.xTypeArguments,
 			XmlName.xArguments,
@@ -23,42 +23,44 @@ namespace Xamarin.Forms.Xaml
 			XmlName.xDataType
 		};
 
-		public ApplyPropertiesVisitor(HydratationContext context, bool stopOnResourceDictionary = false)
+		public ApplyPropertiesVisitor(HydrationContext context, bool stopOnResourceDictionary = false)
 		{
 			Context = context;
 			StopOnResourceDictionary = stopOnResourceDictionary;
 		}
 
-		Dictionary<INode, object> Values {
-			get { return Context.Values; }
-		}
-
-		HydratationContext Context { get; }
+		Dictionary<INode, object> Values => Context.Values;
+		HydrationContext Context { get; }
 
 		public TreeVisitingMode VisitingMode => TreeVisitingMode.BottomUp;
 		public bool StopOnDataTemplate => true;
 		public bool StopOnResourceDictionary { get; }
 		public bool VisitNodeOnDataTemplate => true;
+		public bool SkipChildren(INode node, INode parentNode) => false;
+		public bool IsResourceDictionary(ElementNode node) => Context.Types.TryGetValue(node, out var type) && typeof(ResourceDictionary).IsAssignableFrom(type);
 
 		public void Visit(ValueNode node, INode parentNode)
 		{
 			var parentElement = parentNode as IElementNode;
 			var value = Values [node];
-			var source = Values [parentNode];
+			if (!Values.TryGetValue(parentNode, out var source) && Context.ExceptionHandler != null)
+				return;
 
 			XmlName propertyName;
+
 			if (TryGetPropertyName(node, parentNode, out propertyName)) {
+				if (TrySetRuntimeName(propertyName, source, value, node))
+					return;
 				if (Skips.Contains(propertyName))
 					return;
 				if (parentElement.SkipProperties.Contains(propertyName))
 					return;
-				if (propertyName.NamespaceURI == "http://schemas.openxmlformats.org/markup-compatibility/2006" &&
-					propertyName.LocalName == "Ignorable")
+				if (propertyName.Equals(XamlParser.McUri, "Ignorable"))
 					return;
 				SetPropertyValue(source, propertyName, value, Context.RootElement, node, Context, node);
 			} else if (IsCollectionItem(node, parentNode) && parentNode is IElementNode) {
 				// Collection element, implicit content, or implicit collection element.
-				var contentProperty = GetContentPropertyName(Context.Types [parentElement].GetTypeInfo());
+				var contentProperty = GetContentPropertyName(Context.Types[parentElement].GetTypeInfo());
 				if (contentProperty != null) {
 					var name = new XmlName(((ElementNode)parentNode).NamespaceURI, contentProperty);
 					if (Skips.Contains(name))
@@ -76,8 +78,8 @@ namespace Xamarin.Forms.Xaml
 
 		public void Visit(ElementNode node, INode parentNode)
 		{
-			var propertyName = XmlName.Empty;
-			if (TryGetPropertyName(node, parentNode, out propertyName) && propertyName == XmlName._CreateContent){
+			XmlName propertyName;
+			if (TryGetPropertyName(node, parentNode, out propertyName) && propertyName == XmlName._CreateContent) {
 				var s0 = Values[parentNode];
 				if (s0 is ElementTemplate) {
 					SetTemplate(s0 as ElementTemplate, node);
@@ -85,21 +87,7 @@ namespace Xamarin.Forms.Xaml
 				}
 			}
 
-			var value = Values [node];
 			var parentElement = parentNode as IElementNode;
-			var markupExtension = value as IMarkupExtension;
-			var valueProvider = value as IValueProvider;
-
-			if (markupExtension != null) {
-				var serviceProvider = value.GetType().GetTypeInfo().GetCustomAttribute<AcceptEmptyServiceProviderAttribute>() == null ? new XamlServiceProvider(node, Context) : null;
-				value = markupExtension.ProvideValue(serviceProvider);
-			}
-
-			if (valueProvider != null) {
-				var serviceProvider = value.GetType().GetTypeInfo().GetCustomAttribute<AcceptEmptyServiceProviderAttribute>() == null ? new XamlServiceProvider(node, Context) : null;
-				value = valueProvider.ProvideValue(serviceProvider);
-			}
-
 			propertyName = XmlName.Empty;
 
 			//Simplify ListNodes with single elements
@@ -110,74 +98,87 @@ namespace Xamarin.Forms.Xaml
 				parentElement = parentNode as IElementNode;
 			}
 
+			if (!Values.TryGetValue(node, out var value) && Context.ExceptionHandler != null)
+				return;
+
 			if (propertyName != XmlName.Empty || TryGetPropertyName(node, parentNode, out propertyName)) {
 				if (Skips.Contains(propertyName))
 					return;
 				if (parentElement.SkipProperties.Contains(propertyName))
 					return;
 
-				var source = Values [parentNode];
+				if (!Values.TryGetValue(parentNode, out var source) && Context.ExceptionHandler != null)
+					return;
+				ProvideValue(ref value, node, source, propertyName);
 				SetPropertyValue(source, propertyName, value, Context.RootElement, node, Context, node);
-			} else if (IsCollectionItem(node, parentNode) && parentNode is IElementNode) {
-				// Collection element, implicit content, or implicit collection element.
+			}
+			else if (IsCollectionItem(node, parentNode) && parentNode is IElementNode) {
+				if (!Values.TryGetValue(parentNode, out var source) && Context.ExceptionHandler != null)
+					return;
+				ProvideValue(ref value, node, source, XmlName.Empty);
 				string contentProperty;
-				if (typeof(IEnumerable).GetTypeInfo().IsAssignableFrom(Context.Types [parentElement].GetTypeInfo()) && Context.Types[parentElement].GetRuntimeMethods().Any(mi => mi.Name == "Add" && mi.GetParameters().Length == 1)) {
-					var source = Values [parentNode];
-					if (!(typeof(ResourceDictionary).IsAssignableFrom(Context.Types [parentElement]))) {
-						var addMethod =
-							Context.Types [parentElement].GetRuntimeMethods().First(mi => mi.Name == "Add" && mi.GetParameters().Length == 1);
-						addMethod.Invoke(source, new [] { value });
-					}
-				} else if ((contentProperty = GetContentPropertyName(Context.Types [parentElement].GetTypeInfo())) != null) {
+				Exception xpe = null;
+				var xKey = node.Properties.ContainsKey(XmlName.xKey) ? ((ValueNode)node.Properties[XmlName.xKey]).Value as string : null;
+
+				//ResourceDictionary
+				if (xpe == null && TryAddToResourceDictionary(source as ResourceDictionary, value, xKey, node, out xpe))
+					return;
+
+				// Collection element, implicit content, or implicit collection element.
+				if (xpe == null && typeof(IEnumerable).IsAssignableFrom(Context.Types[parentElement]) && Context.Types[parentElement].GetRuntimeMethods().Any(mi => mi.Name == "Add" && mi.GetParameters().Length == 1)) {
+					var addMethod =
+						Context.Types[parentElement].GetRuntimeMethods().First(mi => mi.Name == "Add" && mi.GetParameters().Length == 1);
+
+					addMethod.Invoke(source, new[] { value });
+					return;
+				}
+				if (xpe == null && (contentProperty = GetContentPropertyName(Context.Types[parentElement].GetTypeInfo())) != null) {
 					var name = new XmlName(node.NamespaceURI, contentProperty);
 					if (Skips.Contains(name))
 						return;
 					if (parentElement.SkipProperties.Contains(propertyName))
 						return;
 
-					var source = Values [parentNode];
 					SetPropertyValue(source, name, value, Context.RootElement, node, Context, node);
-				} else
-					throw new XamlParseException($"Can not set the content of {((IElementNode)parentNode).XmlType.Name} as it doesn't have a ContentPropertyAttribute", node);
-			} else if (IsCollectionItem(node, parentNode) && parentNode is ListNode) {
+					return;
+				}
+				xpe = xpe ?? new XamlParseException($"Can not set the content of {((IElementNode)parentNode).XmlType.Name} as it doesn't have a ContentPropertyAttribute", node);
+				if (Context.ExceptionHandler != null)
+					Context.ExceptionHandler(xpe);
+				else
+					throw xpe;
+			}
+			else if (IsCollectionItem(node, parentNode) && parentNode is ListNode) {
+				if (!Values.TryGetValue(parentNode.Parent, out var source) && Context.ExceptionHandler != null)
+					return;
+				ProvideValue(ref value, node, source, XmlName.Empty);
 				var parentList = (ListNode)parentNode;
-				var source = Values [parentNode.Parent];
-
 				if (Skips.Contains(parentList.XmlName))
 					return;
+				Exception xpe = null;
+				var xKey = node.Properties.ContainsKey(XmlName.xKey) ? ((ValueNode)node.Properties[XmlName.xKey]).Value as string : null;
 
-				var elementType = source.GetType();
-				var localname = parentList.XmlName.LocalName;
+				var collection = GetPropertyValue(source, parentList.XmlName, Context, parentList, out _, out _) as IEnumerable;
+				if (collection == null)
+					xpe = new XamlParseException($"Property {parentList.XmlName.LocalName} is null or is not IEnumerable", node);
 
-				GetRealNameAndType(ref elementType, parentList.XmlName.NamespaceURI, ref localname, Context, node);
+				if (xpe == null && TryAddToResourceDictionary(collection as ResourceDictionary, value, xKey, node, out xpe))
+					return;
 
-				PropertyInfo propertyInfo = null;
-				try {
-					propertyInfo = elementType.GetRuntimeProperty(localname);
-				} catch (AmbiguousMatchException) {
-					// Get most derived instance of property
-					foreach (var property in elementType.GetRuntimeProperties().Where(prop => prop.Name == localname)) {
-						if (propertyInfo == null || propertyInfo.DeclaringType.IsAssignableFrom(property.DeclaringType))
-							propertyInfo = property;
-					}
-				}
-				if (propertyInfo == null)
-					throw new XamlParseException(string.Format("Property {0} not found", localname), node);
-				MethodInfo getter;
-				if (!propertyInfo.CanRead || (getter = propertyInfo.GetMethod) == null)
-					throw new XamlParseException(string.Format("Property {0} does not have an accessible getter", localname), node);
-				IEnumerable collection;
-				if ((collection = getter.Invoke(source, new object [] { }) as IEnumerable) == null)
-					throw new XamlParseException(string.Format("Property {0} is null or is not IEnumerable", localname), node);
 				MethodInfo addMethod;
-				if (
-					(addMethod =
-						collection.GetType().GetRuntimeMethods().First(mi => mi.Name == "Add" && mi.GetParameters().Length == 1)) == null)
-					throw new XamlParseException(string.Format("Value of {0} does not have a Add() method", localname), node);
-
-				addMethod.Invoke(collection, new [] { Values [node] });
+				if (xpe == null && (addMethod = collection.GetType().GetRuntimeMethods().First(mi => mi.Name == "Add" && mi.GetParameters().Length == 1)) != null) {
+					addMethod.Invoke(collection, new[] { value });
+					return;
+				}
+				xpe = xpe ?? new XamlParseException($"Value of {parentList.XmlName.LocalName} does not have a Add() method", node);
+				if (Context.ExceptionHandler != null)
+					Context.ExceptionHandler(xpe);
+				else
+					throw xpe;
 			}
 		}
+
+		
 
 		public void Visit(RootNode node, INode parentNode)
 		{
@@ -202,7 +203,7 @@ namespace Xamarin.Forms.Xaml
 			return false;
 		}
 
-		static bool IsCollectionItem(INode node, INode parentNode)
+		internal static bool IsCollectionItem(INode node, INode parentNode)
 		{
 			var parentList = parentNode as IListNode;
 			if (parentList == null)
@@ -221,6 +222,34 @@ namespace Xamarin.Forms.Xaml
 			return null;
 		}
 
+		void ProvideValue(ref object value, ElementNode node, object source, XmlName propertyName)
+		{
+			var markupExtension = value as IMarkupExtension;
+			var valueProvider = value as IValueProvider;
+
+			if (markupExtension == null && valueProvider == null)
+				return;
+
+			XamlServiceProvider serviceProvider = null;
+			if (value.GetType().GetTypeInfo().GetCustomAttribute<AcceptEmptyServiceProviderAttribute>() == null)
+				serviceProvider = new XamlServiceProvider(node, Context);
+
+			if (serviceProvider != null && propertyName != XmlName.Empty)
+				((XamlValueTargetProvider)serviceProvider.IProvideValueTarget).TargetProperty = GetTargetProperty(source, propertyName, Context, node);
+
+			try {
+				if (markupExtension != null)
+					value = markupExtension.ProvideValue(serviceProvider);
+				else if (valueProvider != null)
+					value = valueProvider.ProvideValue(serviceProvider);
+			} catch (Exception e) {
+				if (Context.ExceptionHandler != null)
+					Context.ExceptionHandler(e);
+				else
+					throw e;
+			}
+		}
+
 		static string GetContentPropertyName(IEnumerable<CustomAttributeData> attributes)
 		{
 			var contentAttribute =
@@ -233,7 +262,7 @@ namespace Xamarin.Forms.Xaml
 		}
 
 		static bool GetRealNameAndType(ref Type elementType, string namespaceURI, ref string localname,
-			HydratationContext context, IXmlLineInfo lineInfo)
+			HydrationContext context, IXmlLineInfo lineInfo)
 		{
 			var dotIdx = localname.IndexOf('.');
 			if (dotIdx > 0) {
@@ -242,6 +271,7 @@ namespace Xamarin.Forms.Xaml
 				XamlParseException xpe;
 				elementType = XamlParser.GetElementType(new XmlType(namespaceURI, typename, null), lineInfo,
 					context.RootElement.GetType().GetTypeInfo().Assembly, out xpe);
+
 				if (xpe != null)
 					throw xpe;
 				return true;
@@ -252,14 +282,19 @@ namespace Xamarin.Forms.Xaml
 		static BindableProperty GetBindableProperty(Type elementType, string localName, IXmlLineInfo lineInfo,
 			bool throwOnError = false)
 		{
-			var bindableFieldInfo =
-				elementType.GetFields().FirstOrDefault(fi => fi.Name == localName + "Property" && fi.IsStatic && fi.IsPublic);
-
+#if NETSTANDARD1_0
+			var bindableFieldInfo = elementType.GetFields().FirstOrDefault(fi => fi.Name == localName + "Property");
+#else
+			// F# does not support public fields, so allow internal (Assembly) as well as public
+			const BindingFlags supportedFlags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy;
+			var bindableFieldInfo = elementType.GetFields(supportedFlags)
+												.FirstOrDefault(fi => (fi.IsAssembly || fi.IsPublic) && fi.Name == localName + "Property");
+#endif
 			Exception exception = null;
 			if (exception == null && bindableFieldInfo == null) {
 				exception =
 					new XamlParseException(
-						string.Format("BindableProperty {0} not found on {1}", localName + "Property", elementType.Name), lineInfo);
+						Format("BindableProperty {0} not found on {1}", localName + "Property", elementType.Name), lineInfo);
 			}
 
 			if (exception == null)
@@ -269,11 +304,28 @@ namespace Xamarin.Forms.Xaml
 			return null;
 		}
 
-		public static void SetPropertyValue(object xamlelement, XmlName propertyName, object value, object rootElement, INode node, HydratationContext context, IXmlLineInfo lineInfo)
+		static object GetTargetProperty(object xamlelement, XmlName propertyName, HydrationContext context, IXmlLineInfo lineInfo)
+		{
+			var localName = propertyName.LocalName;
+			//If it's an attached BP, update elementType and propertyName
+			var bpOwnerType = xamlelement.GetType();
+			GetRealNameAndType(ref bpOwnerType, propertyName.NamespaceURI, ref localName, context, lineInfo);
+			var property = GetBindableProperty(bpOwnerType, localName, lineInfo, false);
+
+			if (property != null)
+				return property;
+			
+			var elementType = xamlelement.GetType();
+			var propertyInfo = elementType.GetRuntimeProperties().FirstOrDefault(p => p.Name == localName);
+			return propertyInfo;
+		}
+
+		public static void SetPropertyValue(object xamlelement, XmlName propertyName, object value, object rootElement, INode node, HydrationContext context, IXmlLineInfo lineInfo)
 		{
 			var localName = propertyName.LocalName;
 			var serviceProvider = new XamlServiceProvider(node, context);
 			Exception xpe = null;
+			var xKey = node is IElementNode && ((IElementNode)node).Properties.ContainsKey(XmlName.xKey) ? ((ValueNode)((IElementNode)node).Properties[XmlName.xKey]).Value as string : null;
 
 			//If it's an attached BP, update elementType and propertyName
 			var bpOwnerType = xamlelement.GetType();
@@ -281,7 +333,7 @@ namespace Xamarin.Forms.Xaml
 			var property = GetBindableProperty(bpOwnerType, localName, lineInfo, false);
 
 			//If the target is an event, connect
-			if (xpe == null && TryConnectEvent(xamlelement, localName, value, rootElement, lineInfo, out xpe))
+			if (xpe == null && TryConnectEvent(xamlelement, localName, attached, value, rootElement, lineInfo, out xpe))
 				return;
 
 			//If Value is DynamicResource and it's a BP, SetDynamicResource
@@ -301,19 +353,46 @@ namespace Xamarin.Forms.Xaml
 				return;
 
 			//If it's an already initialized property, add to it
-			if (xpe == null && TryAddToProperty(xamlelement, localName, value, lineInfo, serviceProvider, out xpe))
+			if (xpe == null && TryAddToProperty(xamlelement, propertyName, value, xKey, lineInfo, serviceProvider, context, out xpe))
 				return;
 
-			xpe = xpe ?? new XamlParseException($"Cannot assign property \"{localName}\": Property does not exists, or is not assignable, or mismatching type between value and property", lineInfo);
-			if (context.DoNotThrowOnExceptions)
-				System.Diagnostics.Debug.WriteLine(xpe.Message);
+			xpe = xpe ?? new XamlParseException($"Cannot assign property \"{localName}\": Property does not exist, or is not assignable, or mismatching type between value and property", lineInfo);
+			if (context.ExceptionHandler != null)
+				context.ExceptionHandler(xpe);
 			else
 				throw xpe;
 		}
 
-		static bool TryConnectEvent(object element, string localName, object value, object rootElement, IXmlLineInfo lineInfo, out Exception exception)
+		public static object GetPropertyValue(object xamlElement, XmlName propertyName, HydrationContext context, IXmlLineInfo lineInfo, out Exception xpe, out object targetProperty)
+		{
+			var localName = propertyName.LocalName;
+			xpe = null;
+			targetProperty = null;
+
+			//If it's an attached BP, update elementType and propertyName
+			var bpOwnerType = xamlElement.GetType();
+			var attached = GetRealNameAndType(ref bpOwnerType, propertyName.NamespaceURI, ref localName, context, lineInfo);
+			var property = GetBindableProperty(bpOwnerType, localName, lineInfo, false);
+
+			//If it's a BindableProberty, GetValue
+			if (xpe == null && TryGetValue(xamlElement, property, attached, out var value, lineInfo, out xpe, out targetProperty))
+				return value;
+
+			//If it's a normal property, get it
+			if (xpe == null && TryGetProperty(xamlElement, localName, out value, lineInfo, context, out xpe, out targetProperty))
+				return value;
+
+			xpe = xpe ?? new XamlParseException($"Property {localName} is not found or does not have an accessible getter", lineInfo);
+
+			return null;
+		}
+
+		static bool TryConnectEvent(object element, string localName, bool attached, object value, object rootElement, IXmlLineInfo lineInfo, out Exception exception)
 		{
 			exception = null;
+
+			if (attached)
+				return false;
 
 			var elementType = element.GetType();
 			var eventInfo = elementType.GetRuntimeEvent(localName);
@@ -322,18 +401,18 @@ namespace Xamarin.Forms.Xaml
 			if (eventInfo == null || IsNullOrEmpty(stringValue))
 				return false;
 
-			var methodInfo = rootElement.GetType().GetRuntimeMethods().FirstOrDefault(mi => mi.Name == (string)value);
-			if (methodInfo == null) {
-				exception = new XamlParseException($"No method {value} found on type {rootElement.GetType()}", lineInfo);
-				return false;
+			foreach (var mi in rootElement.GetType().GetRuntimeMethods()) {
+				if (mi.Name == (string)value) {
+					try {
+						eventInfo.AddEventHandler(element, mi.CreateDelegate(eventInfo.EventHandlerType, mi.IsStatic ? null : rootElement));
+						return true;
+					} catch (ArgumentException) {
+						// incorrect method signature
+					}
+				}
 			}
 
-			try {
-				eventInfo.AddEventHandler(element, methodInfo.CreateDelegate(eventInfo.EventHandlerType, rootElement));
-				return true;
-			} catch (ArgumentException ae) {
-				exception = new XamlParseException($"Method {stringValue} does not have the correct signature", lineInfo, ae);
-			}
+			exception = new XamlParseException($"No method {value} with correct signature found on type {rootElement.GetType()}", lineInfo);
 			return false;
 		}
 
@@ -362,7 +441,9 @@ namespace Xamarin.Forms.Xaml
 			exception = null;
 
 			var elementType = element.GetType();
-			var binding = value.ConvertTo(typeof(BindingBase),pinfoRetriever:null,serviceProvider:null) as BindingBase;
+			var binding = value.ConvertTo(typeof(BindingBase),pinfoRetriever:null,serviceProvider:null, exception:out exception) as BindingBase;
+			if (exception != null)
+				return false;
 			var bindable = element as BindableObject;
 			var nativeBindingService = DependencyService.Get<INativeBindingService>();
 
@@ -397,12 +478,31 @@ namespace Xamarin.Forms.Xaml
 			if (property == null)
 				return false;
 
+			if (serviceProvider != null && serviceProvider.IProvideValueTarget != null)
+				((XamlValueTargetProvider)serviceProvider.IProvideValueTarget).TargetProperty = property;
+
 			Func<MemberInfo> minforetriever;
 			if (attached)
-				minforetriever = () => property.DeclaringType.GetRuntimeMethod("Get" + property.PropertyName, new [] { typeof(BindableObject) });
+				minforetriever = () =>
+				{
+					try {
+						return property.DeclaringType.GetRuntimeMethod("Get" + property.PropertyName, new[] { typeof(BindableObject) });
+					} catch (AmbiguousMatchException e) {
+						throw new XamlParseException($"Multiple methods with name '{property.DeclaringType}.Get{property.PropertyName}' found.", lineInfo, innerException: e);
+					}
+				};
 			else
-				minforetriever = () => property.DeclaringType.GetRuntimeProperty(property.PropertyName);
-			var convertedValue = value.ConvertTo(property.ReturnType, minforetriever, serviceProvider);
+				minforetriever = () =>
+				{
+					try {
+						return property.DeclaringType.GetRuntimeProperty(property.PropertyName);
+					} catch (AmbiguousMatchException e) {
+						throw new XamlParseException($"Multiple properties with name '{property.DeclaringType}.{property.PropertyName}' found.", lineInfo, innerException: e);
+					}
+				};
+			var convertedValue = value.ConvertTo(property.ReturnType, minforetriever, serviceProvider, out exception);
+			if (exception != null)
+				return false;
 
 			if (bindable != null) {
 				//SetValue doesn't throw on mismatching type, so check before to get a chance to try the property setting or the collection adding
@@ -410,10 +510,18 @@ namespace Xamarin.Forms.Xaml
 							   property.ReturnTypeInfo.GetGenericTypeDefinition() == typeof(Nullable<>);
 				if ((convertedValue == null && (!property.ReturnTypeInfo.IsValueType || nullable)) ||
 					(property.ReturnType.IsInstanceOfType(convertedValue))) {
-					bindable.SetValue(property, convertedValue);
-					return true;
+					try {
+						bindable.SetValue(property, convertedValue);
+						return true;
+					}
+					catch (Exception e) {
+						exception = e;
+						return false;
+					}
 				}
-				return false;
+
+				// This might be a collection; see if we can add to it
+				return TryAddValue(bindable, property, value, serviceProvider, out exception);
 			}
 
 			if (nativeBindingService != null && nativeBindingService.TrySetValue(element, property, convertedValue))
@@ -423,7 +531,25 @@ namespace Xamarin.Forms.Xaml
 			return false;
 		}
 
-		static bool TrySetProperty(object element, string localName, object value, IXmlLineInfo lineInfo, XamlServiceProvider serviceProvider, HydratationContext context, out Exception exception)
+		static bool TryGetValue(object element, BindableProperty property, bool attached, out object value, IXmlLineInfo lineInfo, out Exception exception, out object targetProperty)
+		{
+			exception = null;
+			value = null;
+			targetProperty = property;
+			var elementType = element.GetType();
+			var bindable = element as BindableObject;
+
+			if (property == null)
+				return false;
+
+			if (bindable == null)
+				return false;
+
+			value = bindable.GetValue(property);
+			return true;
+		}
+
+		static bool TrySetProperty(object element, string localName, object value, IXmlLineInfo lineInfo, XamlServiceProvider serviceProvider, HydrationContext context, out Exception exception)
 		{
 			exception = null;
 
@@ -436,46 +562,121 @@ namespace Xamarin.Forms.Xaml
 			if (!IsVisibleFrom(setter, context.RootElement))
 				return false;
 
-			object convertedValue = value.ConvertTo(propertyInfo.PropertyType, () => propertyInfo, serviceProvider);
-			if (convertedValue != null && !propertyInfo.PropertyType.IsInstanceOfType(convertedValue))
+			if (serviceProvider != null && serviceProvider.IProvideValueTarget != null)
+				((XamlValueTargetProvider)serviceProvider.IProvideValueTarget).TargetProperty = propertyInfo;
+
+			object convertedValue = value.ConvertTo(propertyInfo.PropertyType, () => propertyInfo, serviceProvider, out exception);
+			if (exception != null || (convertedValue != null && !propertyInfo.PropertyType.IsInstanceOfType(convertedValue)))
 				return false;
 
-			setter.Invoke(element, new object [] { convertedValue });
+			try {
+				setter.Invoke(element, new object[] { convertedValue });
+				return true;
+			}
+			catch (Exception e) {
+				exception = e;
+				return false;
+			}
+		}
+
+		static bool TryGetProperty(object element, string localName, out object value, IXmlLineInfo lineInfo, HydrationContext context, out Exception exception, out object targetProperty)
+		{
+			exception = null;
+			value = null;
+			var elementType = element.GetType();
+			PropertyInfo propertyInfo = null;
+#if NETSTANDARD1_0
+			try {
+				propertyInfo = elementType.GetRuntimeProperty(localName);
+			} catch (AmbiguousMatchException) {
+				// Get most derived instance of property
+				foreach (var property in elementType.GetRuntimeProperties().Where(prop => prop.Name == localName)) {
+					if (propertyInfo == null || propertyInfo.DeclaringType.IsAssignableFrom(property.DeclaringType))
+						propertyInfo = property;
+				}
+			}
+#else
+			while (elementType != null && propertyInfo == null) {
+				try {
+					propertyInfo = elementType.GetProperty(localName, BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.DeclaredOnly);
+				} catch (AmbiguousMatchException e) {
+					throw new XamlParseException($"Multiple properties with name '{elementType}.{localName}' found.", lineInfo, innerException: e);
+				}
+				elementType = elementType.BaseType;
+			}
+#endif
+			MethodInfo getter;
+			targetProperty = propertyInfo;
+			if (propertyInfo == null || !propertyInfo.CanRead || (getter = propertyInfo.GetMethod) == null)
+				return false;
+
+			if (!IsVisibleFrom(getter, context.RootElement))
+				return false;
+
+			value = getter.Invoke(element, new object[] { });
 			return true;
 		}
 
-		static bool IsVisibleFrom(MethodInfo setter, object rootElement)
+		static bool IsVisibleFrom(MethodInfo method, object rootElement)
 		{
-			if (setter.IsPublic)
+			if (method.IsPublic)
 				return true;
-			if (setter.IsPrivate && setter.DeclaringType == rootElement.GetType())
+			if (method.IsPrivate && method.DeclaringType == rootElement.GetType())
 				return true;
-			if ((setter.IsAssembly || setter.IsFamilyOrAssembly) && setter.DeclaringType.AssemblyQualifiedName == rootElement.GetType().AssemblyQualifiedName)
+			if ((method.IsAssembly || method.IsFamilyOrAssembly) && method.DeclaringType.AssemblyQualifiedName == rootElement.GetType().AssemblyQualifiedName)
 				return true;
-			if (setter.IsFamily && setter.DeclaringType.IsAssignableFrom(rootElement.GetType()))
+			if (method.IsFamily && method.DeclaringType.IsAssignableFrom(rootElement.GetType()))
 				return true;
 			return false;
 		}
 
-		static bool TryAddToProperty(object element, string localName, object value, IXmlLineInfo lineInfo, XamlServiceProvider serviceProvider, out Exception exception)
+		static bool TryAddToProperty(object element, XmlName propertyName, object value, string xKey, IXmlLineInfo lineInfo, XamlServiceProvider serviceProvider, HydrationContext context, out Exception exception)
 		{
 			exception = null;
-
-			var elementType = element.GetType();
-			var propertyInfo = elementType.GetRuntimeProperties().FirstOrDefault(p => p.Name == localName);
-			MethodInfo getter;
-			if (propertyInfo == null || !propertyInfo.CanRead || (getter = propertyInfo.GetMethod) == null)
+			if (!(GetPropertyValue(element, propertyName, context, lineInfo, out _, out var targetProperty) is IEnumerable collection))
 				return false;
 
-			var collection = getter.Invoke(element, new object [] { }) as IEnumerable;
-			if (collection == null)
+			if (exception == null && TryAddToResourceDictionary(collection as ResourceDictionary, value, xKey, lineInfo, out exception))
+				return true;
+
+			if (exception != null)
 				return false;
 
 			var addMethod = collection.GetType().GetRuntimeMethods().First(mi => mi.Name == "Add" && mi.GetParameters().Length == 1);
 			if (addMethod == null)
 				return false;
 
-			addMethod.Invoke(collection, new [] { value.ConvertTo(addMethod.GetParameters() [0].ParameterType, (Func<TypeConverter>)null, serviceProvider) });
+			if (serviceProvider != null)
+				((XamlValueTargetProvider)serviceProvider.IProvideValueTarget).TargetProperty = targetProperty;
+
+			try {
+				addMethod.Invoke(collection, new[] { value.ConvertTo(addMethod.GetParameters()[0].ParameterType, (Func<TypeConverter>)null, serviceProvider, out exception) });
+			}
+			catch (Exception e) {
+				exception = e;
+			}
+			return exception == null;
+		}
+
+		static bool TryAddToResourceDictionary(ResourceDictionary resourceDictionary, object value, string xKey, IXmlLineInfo lineInfo, out Exception exception)
+		{
+			exception = null;
+
+			if (resourceDictionary == null)
+				return false;
+
+			if (xKey != null)
+				resourceDictionary.Add(xKey, value);
+			else if (value is Style)
+				resourceDictionary.Add((Style)value);
+			else if (value is ResourceDictionary)
+				resourceDictionary.Add((ResourceDictionary)value);
+			else if (value is StyleSheets.StyleSheet)
+				resourceDictionary.Add((StyleSheets.StyleSheet)value);
+			else {
+				exception = new XamlParseException("resources in ResourceDictionary require a x:Key attribute", lineInfo);
+				return false;
+			}
 			return true;
 		}
 
@@ -485,7 +686,7 @@ namespace Xamarin.Forms.Xaml
 			((IDataTemplate)dt).LoadTemplate = () => {
 #pragma warning restore 0612
 				var cnode = node.Clone();
-				var context = new HydratationContext { ParentContext = Context, RootElement = Context.RootElement };
+				var context = new HydrationContext { ParentContext = Context, RootAssembly = Context.RootAssembly, RootElement = Context.RootElement, ExceptionHandler = Context.ExceptionHandler };
 				cnode.Accept(new XamlNodeVisitor((n, parent) => n.Parent = parent), node.Parent); //set parents for {StaticResource}
 				cnode.Accept(new ExpandMarkupsVisitor(context), null);
 				cnode.Accept(new NamescopingVisitor(context), null);
@@ -495,6 +696,51 @@ namespace Xamarin.Forms.Xaml
 				cnode.Accept(new ApplyPropertiesVisitor(context, true), null);
 				return context.Values [cnode];
 			};
+		}
+
+		static bool TryAddValue(BindableObject bindable, BindableProperty property, object value, XamlServiceProvider serviceProvider, out Exception exception)
+		{
+			exception = null;
+
+			if (property?.ReturnTypeInfo?.GenericTypeArguments == null)
+				return false;
+
+			if (property.ReturnType == null)
+				return false;
+
+			if (property.ReturnTypeInfo.GenericTypeArguments.Length != 1 || !property.ReturnTypeInfo.GenericTypeArguments[0].IsInstanceOfType(value))
+				return false;
+
+			// This might be a collection we can add to; see if we can find an Add method
+			var addMethod = GetAllRuntimeMethods(property.ReturnType).FirstOrDefault(mi => mi.Name == "Add" && mi.GetParameters().Length == 1);
+			if (addMethod == null)
+				return false;
+
+			// If there's an add method, get the collection
+			var collection = bindable.GetValue(property);
+			
+			// And add the new value to it
+			addMethod.Invoke(collection, new[] { value.ConvertTo(addMethod.GetParameters()[0].ParameterType, (Func<TypeConverter>)null, serviceProvider, out exception) });
+			return exception == null;
+		}
+
+		static IEnumerable<MethodInfo> GetAllRuntimeMethods(Type type)
+		{
+			return type.GetRuntimeMethods()
+				.Concat(type.GetTypeInfo().ImplementedInterfaces.SelectMany(t => t.GetRuntimeMethods()));
+		}
+
+		bool TrySetRuntimeName(XmlName propertyName, object source, object value, ValueNode node)
+		{
+			if (propertyName != XmlName.xName)
+				return false;
+
+			var runTimeName = source.GetType().GetTypeInfo().GetCustomAttribute<RuntimeNamePropertyAttribute>();
+			if (runTimeName == null)
+				return false;
+
+			SetPropertyValue(source, new XmlName("", runTimeName.Name), value, Context.RootElement, node, Context, node);
+			return true;
 		}
 	}
 }

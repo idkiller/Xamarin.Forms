@@ -8,6 +8,9 @@ using NUnit.Framework;
 
 namespace Xamarin.Forms.Controls.Issues
 {
+#if UITEST
+	[NUnit.Framework.Category(Core.UITests.UITestCategories.Bugzilla)]
+#endif
 	[Preserve(AllMembers = true)]
 	[Issue(IssueTracker.Bugzilla, 44476, "[Android] Unwanted margin at top of details page when nested in a NavigationPage")]
 	public class Bugzilla44476 : TestNavigationPage
@@ -15,7 +18,6 @@ namespace Xamarin.Forms.Controls.Issues
 		protected override void Init()
 		{
 			BackgroundColor = Color.Maroon;
-			
 			PushAsync(new MasterDetailPage
 			{
 				Title = "Bugzilla Issue 44476",
@@ -52,5 +54,17 @@ namespace Xamarin.Forms.Controls.Issues
 				},
 			});
 		}
+
+#if UITEST
+		[Test]
+		[Description("Verify that label with text 'This should be visible' is visible")]
+		[UiTest(typeof(MasterDetailPage))]
+		public void Issue44476TestUnwantedMargin()
+		{
+			RunningApp.WaitForElement(q => q.Marked("This should be visible."));
+		}
+#endif
 	}
+
+
 }

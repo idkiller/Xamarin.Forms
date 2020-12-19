@@ -1257,10 +1257,11 @@ namespace Xamarin.Forms.Core.UnitTests
 		}
 
 		#if !WINDOWS_PHONE
-		[Test]
-		[SetUICulture ("pt-PT")]
-		public void ValueConverterCulture ()
+		[TestCase("en-US"), TestCase("pt-PT"), TestCase("tr-TR")]
+		public void ValueConverterCulture (string culture)
 		{
+			System.Threading.Thread.CurrentThread.CurrentUICulture = new CultureInfo(culture);
+
 			var converter = new TestConverterCulture ();
 			var vm = new MockViewModel ();
 			var property = BindableProperty.Create<MockBindable, string> (w=>w.Text, "Bar", BindingMode.OneWayToSource);
@@ -1268,7 +1269,7 @@ namespace Xamarin.Forms.Core.UnitTests
 			bindable.SetBinding (property, new Binding ("Text", converter: converter));
 			bindable.BindingContext = vm;
 
-			Assert.AreEqual ("pt-PT", vm.Text);
+			Assert.AreEqual (culture, vm.Text);
 		}
 		#endif
 
@@ -1587,7 +1588,7 @@ namespace Xamarin.Forms.Core.UnitTests
 			Assert.That (() => bindable.SetBinding (MockBindable.TextProperty, new Binding ("Text2")), Throws.Nothing);
 			Assert.That (bindable.Text, Is.EqualTo (MockBindable.TextProperty.DefaultValue));
 			Assert.That (log.Messages.Count, Is.EqualTo (1), "An error was not logged");
-			Assert.That (log.Messages[0], Is.StringContaining (String.Format (BindingExpression.PropertyNotFoundErrorMessage,
+			Assert.That (log.Messages[0], Does.Contain(String.Format (BindingExpression.PropertyNotFoundErrorMessage,
 				"Text2",
 				"Xamarin.Forms.Core.UnitTests.BindingUnitTests+DifferentViewModel",
 				"Xamarin.Forms.Core.UnitTests.MockBindable",
@@ -1606,7 +1607,7 @@ namespace Xamarin.Forms.Core.UnitTests
 			Assert.That (bindable.Text, Is.EqualTo ("Foo"));
 
 			Assert.That (log.Messages.Count, Is.Not.GreaterThan (1), "Too many errors were logged");
-			Assert.That (log.Messages[0], Is.StringContaining (String.Format (BindingExpression.PropertyNotFoundErrorMessage,
+			Assert.That (log.Messages[0], Does.Contain(String.Format (BindingExpression.PropertyNotFoundErrorMessage,
 				"Text",
 				"Xamarin.Forms.Core.UnitTests.BindingUnitTests+EmptyViewModel",
 				"Xamarin.Forms.Core.UnitTests.MockBindable",
@@ -1620,7 +1621,7 @@ namespace Xamarin.Forms.Core.UnitTests
 			Assert.That (() => bindable.SetBinding (MockBindable.TextProperty, new Binding ("Text")), Throws.Nothing);
 
 			Assert.That (log.Messages.Count, Is.EqualTo (1), "An error was not logged");
-			Assert.That (log.Messages[0], Is.StringContaining (String.Format (BindingExpression.PropertyNotFoundErrorMessage,
+			Assert.That (log.Messages[0], Does.Contain(String.Format (BindingExpression.PropertyNotFoundErrorMessage,
 				"Text",
 				"Xamarin.Forms.Core.UnitTests.BindingUnitTests+DifferentViewModel",
 				"Xamarin.Forms.Core.UnitTests.MockBindable",
@@ -1636,7 +1637,7 @@ namespace Xamarin.Forms.Core.UnitTests
 			Assert.That (() => bindable.SetBinding (MockBindable.TextProperty, new Binding ("PrivateSetter")), Throws.Nothing);
 
 			Assert.That (log.Messages.Count, Is.EqualTo (1), "An error was not logged");
-			Assert.That (log.Messages[0], Is.StringContaining (String.Format (BindingExpression.PropertyNotFoundErrorMessage,
+			Assert.That (log.Messages[0], Does.Contain(String.Format (BindingExpression.PropertyNotFoundErrorMessage,
 				"PrivateSetter",
 				"Xamarin.Forms.Core.UnitTests.BindingUnitTests+DifferentViewModel",
 				"Xamarin.Forms.Core.UnitTests.MockBindable",
@@ -1645,7 +1646,7 @@ namespace Xamarin.Forms.Core.UnitTests
 			Assert.That (() => bindable.SetValueCore (MockBindable.TextProperty, "foo"), Throws.Nothing);
 
 			Assert.That (log.Messages.Count, Is.EqualTo (2), "An error was not logged");
-			Assert.That (log.Messages[1], Is.StringContaining (String.Format (BindingExpression.PropertyNotFoundErrorMessage,
+			Assert.That (log.Messages[1], Does.Contain(String.Format (BindingExpression.PropertyNotFoundErrorMessage,
 				"PrivateSetter",
 				"Xamarin.Forms.Core.UnitTests.BindingUnitTests+DifferentViewModel",
 				"Xamarin.Forms.Core.UnitTests.MockBindable",
@@ -1659,7 +1660,7 @@ namespace Xamarin.Forms.Core.UnitTests
 			Assert.That (() => bindable.SetBinding (MockBindable.TextProperty, new Binding ("MissingProperty")), Throws.Nothing);
 
 			Assert.That (log.Messages.Count, Is.EqualTo (1), "An error was not logged");
-			Assert.That (log.Messages[0], Is.StringContaining (String.Format (BindingExpression.PropertyNotFoundErrorMessage,
+			Assert.That (log.Messages[0], Does.Contain(String.Format (BindingExpression.PropertyNotFoundErrorMessage,
 				"MissingProperty",
 				"Xamarin.Forms.Core.UnitTests.MockViewModel",
 				"Xamarin.Forms.Core.UnitTests.MockBindable",
@@ -1687,7 +1688,7 @@ namespace Xamarin.Forms.Core.UnitTests
 			Assert.That (() => bindable.SetBinding (MockBindable.TextProperty, new Binding ("Model.MissingProperty")), Throws.Nothing);
 
 			Assert.That (log.Messages.Count, Is.EqualTo (1), "An error was not logged");
-			Assert.That (log.Messages[0], Is.StringContaining (String.Format (BindingExpression.PropertyNotFoundErrorMessage,
+			Assert.That (log.Messages[0], Does.Contain(String.Format (BindingExpression.PropertyNotFoundErrorMessage,
 				"MissingProperty",
 				"Xamarin.Forms.Core.UnitTests.BindingBaseUnitTests+ComplexMockViewModel",
 				"Xamarin.Forms.Core.UnitTests.MockBindable",
@@ -1881,11 +1882,11 @@ namespace Xamarin.Forms.Core.UnitTests
 		}
 
 		#if !WINDOWS_PHONE
-		[Test]
-		[SetCulture ("pt-PT")]
-		[SetUICulture ("pt-PT")]
-		public void ConvertIsCultureInvariant ()
+		[TestCase("en-US"), TestCase("pt-PT")]
+		public void ConvertIsCultureInvariant (string culture)
 		{
+			System.Threading.Thread.CurrentThread.CurrentCulture = System.Threading.Thread.CurrentThread.CurrentUICulture = new CultureInfo(culture);
+
 			var slider = new Slider ();
 			var vm = new MockViewModel { Text = "0.5" };
 			slider.BindingContext = vm;
@@ -2113,6 +2114,161 @@ namespace Xamarin.Forms.Core.UnitTests
 			viewModel["Foo"] = "Baz";
 
 			Assert.AreEqual ("Baz", label.Text);
+		}
+
+		class VM57081
+		{
+			string _foo;
+			public string Foo
+			{
+				get {
+					Count++;
+					return _foo;
+				}
+				set { _foo = value; }
+			}
+
+			public int Count { get; set; }
+		}
+
+		[Test]
+		// https://bugzilla.xamarin.com/show_bug.cgi?id=57081
+		public void BindingWithSourceNotReappliedWhenBindingContextIsChanged()
+		{
+			var bindable = new MockBindable();
+			var model = new VM57081();
+			var bp = BindableProperty.Create("foo", typeof(string), typeof(MockBindable), null);
+			Assume.That(model.Count, Is.EqualTo(0));
+			bindable.SetBinding(bp, new Binding { Path = "Foo", Source = model });
+			Assume.That(model.Count, Is.EqualTo(1));
+			bindable.BindingContext = new object();
+			Assert.That(model.Count, Is.EqualTo(1));
+		}
+
+		[Test]
+		// https://bugzilla.xamarin.com/show_bug.cgi?id=57081
+		public void BindingWithSourceNotReappliedWhenParented()
+		{
+			var view = new ContentView();
+			var model = new VM57081();
+			Assume.That(model.Count, Is.EqualTo(0));
+			view.SetBinding(BindableObject.BindingContextProperty, new Binding { Path = "Foo", Source = model });
+			Assume.That(model.Count, Is.EqualTo(1));
+			var parent = new ContentView { BindingContext = new object() };
+			parent.Content = view;
+			Assert.That(model.Count, Is.EqualTo(1));
+		}
+
+		class MockValueTupleContext
+		{
+			public (string Foo, string Bar) Tuple { get; set; }
+		}
+
+		[Test]
+		public void ValueTupleAsBindingContext()
+		{
+			var label = new Label {
+				BindingContext = new MockValueTupleContext { Tuple = (Foo: "FOO", Bar: "BAR")},
+			};
+
+			label.SetBinding(Label.TextProperty, "Tuple.Foo");
+			Assert.AreEqual("FOO", label.Text);
+			label.SetBinding(Label.TextProperty, "Tuple[1]");
+			Assert.AreEqual("BAR", label.Text);
+		}
+
+		[Test]
+		public void OneTimeBindingDoesntUpdateOnPropertyChanged()
+		{
+			var view = new VisualElement();
+			var bp1t = BindableProperty.Create("Foo", typeof(string), typeof(VisualElement));
+			var bp1w = BindableProperty.Create("Foo", typeof(string), typeof(VisualElement));
+			var vm = new MockViewModel("foobar");
+			view.BindingContext = vm;
+			view.SetBinding(bp1t, "Text", mode: BindingMode.OneTime);
+			view.SetBinding(bp1w, "Text", mode: BindingMode.OneWay);
+			Assert.That(view.GetValue(bp1w), Is.EqualTo("foobar"));
+			Assert.That(view.GetValue(bp1t), Is.EqualTo("foobar"));
+
+			vm.Text = "qux";
+			Assert.That(view.GetValue(bp1w), Is.EqualTo("qux"));
+			Assert.That(view.GetValue(bp1t), Is.EqualTo("foobar"));
+		}
+
+		[Test]
+		public void OneTimeBindingUpdatesOnBindingContextChanged()
+		{
+			var view = new VisualElement();
+			var bp1t = BindableProperty.Create("Foo", typeof(string), typeof(VisualElement));
+			var bp1w = BindableProperty.Create("Foo", typeof(string), typeof(VisualElement));
+			view.BindingContext = new MockViewModel("foobar");
+			view.SetBinding(bp1t, "Text", mode: BindingMode.OneTime);
+			view.SetBinding(bp1w, "Text", mode: BindingMode.OneWay);
+			Assert.That(view.GetValue(bp1w), Is.EqualTo("foobar"));
+			Assert.That(view.GetValue(bp1t), Is.EqualTo("foobar"));
+
+			view.BindingContext = new MockViewModel("qux");
+			Assert.That(view.GetValue(bp1w), Is.EqualTo("qux"));
+			Assert.That(view.GetValue(bp1t), Is.EqualTo("qux"));
+		}
+
+		[Test]
+		public void FallbackValueWhenSourceIsNull()
+		{
+			var bindable = new MockBindable();
+			var property = BindableProperty.Create("Foo", typeof(string), typeof(MockBindable), "default");
+			bindable.SetBinding(property, new Binding("Foo.Bar") { FallbackValue = "fallback" });
+			Assert.That(bindable.GetValue(property), Is.EqualTo("fallback"));
+		}
+
+		[Test]
+		//https://github.com/xamarin/Xamarin.Forms/issues/3467
+		public void TargetNullValueIgnoredWhenBindingIsResolved()
+		{
+			var bindable = new MockBindable();
+			var property = BindableProperty.Create("Foo", typeof(string), typeof(MockBindable), "default");
+			bindable.SetBinding(property, new Binding("Text") { TargetNullValue = "fallback" });
+			Assert.That(bindable.GetValue(property), Is.EqualTo("default"));
+			bindable.BindingContext = new MockViewModel { Text="Foo"};
+			Assert.That(bindable.GetValue(property), Is.EqualTo("Foo"));
+		}
+
+		[Test]
+		public void TargetNullValueFallback()
+		{
+			var bindable = new MockBindable();
+			var property = BindableProperty.Create("Foo", typeof(string), typeof(MockBindable), "default");
+			bindable.SetBinding(property, new Binding("Text") { TargetNullValue = "fallback" });
+			Assert.That(bindable.GetValue(property), Is.EqualTo("default"));
+			bindable.BindingContext = new MockViewModel();
+			Assert.That(bindable.GetValue(property), Is.EqualTo("fallback"));
+		}
+
+		[Test]
+		//https://github.com/xamarin/Xamarin.Forms/issues/3994
+		public void INPCOnBindingWithSource()
+		{
+			var page = new ContentPage {Title = "Foo"};
+			page.BindingContext = page;
+			var label = new Label();
+			page.Content = label;
+
+			label.SetBinding(Label.TextProperty, new Binding("BindingContext.Title", source:page));
+			Assert.That(label.Text, Is.EqualTo("Foo"));
+
+			page.Title = "Bar";
+			Assert.That(label.Text, Is.EqualTo("Bar"));
+		}
+
+		[Test]
+		//https://github.com/xamarin/Xamarin.Forms/issues/10405
+		public void TypeConversionExceptionIsCaughtAndLogged()
+		{
+			var label = new Label();
+			label.SetBinding(Label.TextColorProperty, "color");
+
+			Assert.DoesNotThrow(() => label.BindingContext = new { color = "" });
+			Assert.That(log.Messages.Count, Is.EqualTo(1),"No error logged");
 		}
 	}
 }

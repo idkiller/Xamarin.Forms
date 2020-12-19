@@ -10,22 +10,34 @@ namespace Xamarin.Forms
 	{
 		static bool s_initialized;
 
+		static readonly object s_dependencyLock = new object();
+		static readonly object s_initializeLock = new object();
+
 		static readonly List<Type> DependencyTypes = new List<Type>();
 		static readonly Dictionary<Type, DependencyData> DependencyImplementations = new Dictionary<Type, DependencyData>();
+
+		public static T Resolve<T>(DependencyFetchTarget fallbackFetchTarget = DependencyFetchTarget.GlobalInstance) where T : class
+		{
+			var result = DependencyResolver.Resolve(typeof(T)) as T;
+
+			return result ?? Get<T>(fallbackFetchTarget);
+		}
 
 		public static T Get<T>(DependencyFetchTarget fetchTarget = DependencyFetchTarget.GlobalInstance) where T : class
 		{
 			Initialize();
 
-			Type targetType = typeof(T);
-
-			if (!DependencyImplementations.ContainsKey(targetType))
+			DependencyData dependencyImplementation;
+			lock (s_dependencyLock)
 			{
-				Type implementor = FindImplementor(targetType);
-				DependencyImplementations[targetType] = implementor != null ? new DependencyData { ImplementorType = implementor } : null;
+				Type targetType = typeof(T);
+				if (!DependencyImplementations.TryGetValue(targetType, out dependencyImplementation))
+				{
+					Type implementor = FindImplementor(targetType);
+					DependencyImplementations[targetType] = (dependencyImplementation = implementor != null ? new DependencyData { ImplementorType = implementor } : null);
+				}
 			}
 
-			DependencyData dependencyImplementation = DependencyImplementations[targetType];
 			if (dependencyImplementation == null)
 				return null;
 
@@ -33,7 +45,13 @@ namespace Xamarin.Forms
 			{
 				if (dependencyImplementation.GlobalInstance == null)
 				{
-					dependencyImplementation.GlobalInstance = Activator.CreateInstance(dependencyImplementation.ImplementorType);
+					lock (dependencyImplementation)
+					{
+						if (dependencyImplementation.GlobalInstance == null)
+						{
+							dependencyImplementation.GlobalInstance = Activator.CreateInstance(dependencyImplementation.ImplementorType);
+						}
+					}
 				}
 				return (T)dependencyImplementation.GlobalInstance;
 			}
@@ -54,57 +72,74 @@ namespace Xamarin.Forms
 			if (!DependencyTypes.Contains(targetType))
 				DependencyTypes.Add(targetType);
 
-			DependencyImplementations[targetType] = new DependencyData { ImplementorType = implementorType };
+			lock (s_dependencyLock)
+				DependencyImplementations[targetType] = new DependencyData { ImplementorType = implementorType };
 		}
 
-		static Type FindImplementor(Type target)
+		public static void RegisterSingleton<T>(T instance) where T : class
 		{
-			return DependencyTypes.FirstOrDefault(t => target.IsAssignableFrom(t));
+			Type targetType = typeof(T);
+			Type implementorType = typeof(T);
+			if (!DependencyTypes.Contains(targetType))
+				DependencyTypes.Add(targetType);
+
+			lock (s_dependencyLock)
+				DependencyImplementations[targetType] = new DependencyData { ImplementorType = implementorType, GlobalInstance = instance };
 		}
 
+		static Type FindImplementor(Type target) =>
+			DependencyTypes.FirstOrDefault(t => target.IsAssignableFrom(t));
+	
 		static void Initialize()
 		{
 			if (s_initialized)
-			{
 				return;
-			}
 
-			Assembly[] assemblies = Device.GetAssemblies();
-			if (Registrar.ExtraAssemblies != null)
+			lock (s_initializeLock)
 			{
-				assemblies = assemblies.Union(Registrar.ExtraAssemblies).ToArray();
-			}
+				if (s_initialized)
+					return;
 
-			Initialize(assemblies);
+				Assembly[] assemblies = Device.GetAssemblies();
+				if (Internals.Registrar.ExtraAssemblies != null)
+				{
+					assemblies = assemblies.Union(Internals.Registrar.ExtraAssemblies).ToArray();
+				}
+
+				Initialize(assemblies);
+			}
 		}
 
 		internal static void Initialize(Assembly[] assemblies)
 		{
 			if (s_initialized)
-			{
 				return;
-			}
 
-			Type targetAttrType = typeof(DependencyAttribute);
-
-			// Don't use LINQ for performance reasons
-			// Naive implementation can easily take over a second to run
-			foreach (Assembly assembly in assemblies)
+			lock (s_initializeLock)
 			{
-				Attribute[] attributes = assembly.GetCustomAttributes(targetAttrType).ToArray();
-				if (attributes.Length == 0)
-					continue;
+				if (s_initialized)
+					return;
 
-				foreach (DependencyAttribute attribute in attributes)
+				// Don't use LINQ for performance reasons
+				// Naive implementation can easily take over a second to run
+				foreach (Assembly assembly in assemblies)
 				{
-					if (!DependencyTypes.Contains(attribute.Implementor))
+					object[] attributes = assembly.GetCustomAttributesSafe(typeof(DependencyAttribute));
+					if (attributes == null)
+						continue;
+
+					for (int i = 0; i < attributes.Length; i++)
 					{
-						DependencyTypes.Add(attribute.Implementor);
+						DependencyAttribute attribute = (DependencyAttribute)attributes[i];
+						if (!DependencyTypes.Contains(attribute.Implementor))
+						{
+							DependencyTypes.Add(attribute.Implementor);
+						}
 					}
 				}
-			}
 
-			s_initialized = true;
+				s_initialized = true;
+			}
 		}
 
 		class DependencyData

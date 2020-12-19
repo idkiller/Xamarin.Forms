@@ -27,7 +27,15 @@
 	{
 	}
 
+	internal class _ImageButtonRenderer
+	{
+	}
+
 	internal class _ButtonRenderer
+	{
+	}
+
+	internal class _RadioButtonRenderer
 	{
 	}
 
@@ -36,6 +44,10 @@
 	}
 
 	internal class _ListViewRenderer
+	{
+	}
+
+	internal class _CollectionViewRenderer
 	{
 	}
 
@@ -79,6 +91,10 @@
 	{
 	}
 
+	internal class _RefreshViewRenderer
+	{
+	}
+
 	internal class _ScrollViewRenderer
 	{
 	}
@@ -91,7 +107,11 @@
 	{
 	}
 
-	internal class _NavigationMenuRenderer
+	internal class _CheckBoxRenderer
+	{
+	}
+
+	internal class _IndicatorViewRenderer
 	{
 	}
 
@@ -116,6 +136,38 @@
 	}
 
 	internal class _MasterDetailPageRenderer
+	{
+	}
+
+	internal class _MediaElementRenderer
+  {
+	}
+   
+  internal class _SwipeViewRenderer
+	{
+	}
+
+	internal class _PathRenderer	
+	{
+	}
+	
+	internal class _EllipseRenderer
+	{
+	}
+
+	internal class _LineRenderer
+	{
+	}
+
+	internal class _RectangleRenderer
+	{
+	}
+
+	internal class _PolylineRenderer
+	{
+	}
+
+	internal class _PolygonRenderer
 	{
 	}
 }

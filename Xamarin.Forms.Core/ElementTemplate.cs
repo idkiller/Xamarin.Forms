@@ -10,6 +10,7 @@ namespace Xamarin.Forms
 	{
 		List<Action<object, ResourcesChangedEventArgs>> _changeHandlers;
 		Element _parent;
+		bool _canRecycle; // aka IsDeclarative
 
 		internal ElementTemplate()
 		{
@@ -19,6 +20,8 @@ namespace Xamarin.Forms
 		{
 			if (type == null)
 				throw new ArgumentNullException("type");
+
+			_canRecycle = true;
 
 			LoadTemplate = () => Activator.CreateInstance(type);
 		}
@@ -46,6 +49,7 @@ namespace Xamarin.Forms
 			_changeHandlers.Add(onchanged);
 		}
 
+		internal bool CanRecycle => _canRecycle;
 		Element IElement.Parent
 		{
 			get { return _parent; }
@@ -77,6 +81,9 @@ namespace Xamarin.Forms
 
 			object item = LoadTemplate();
 			SetupContent(item);
+
+			if (item is Element elem)
+				elem.IsTemplateRoot = true;
 
 			return item;
 		}

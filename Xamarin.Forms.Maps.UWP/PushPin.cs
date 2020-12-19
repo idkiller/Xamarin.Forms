@@ -6,13 +6,7 @@ using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Maps;
 using Windows.UI.Xaml.Input;
 
-#if WINDOWS_UWP
-
 namespace Xamarin.Forms.Maps.UWP
-#else
-
-namespace Xamarin.Forms.Maps.WinRT
-#endif
 {
 	internal class PushPin : ContentControl
 	{
@@ -52,7 +46,10 @@ namespace Xamarin.Forms.Maps.WinRT
 
 		void PushPinTapped(object sender, TappedRoutedEventArgs e)
 		{
+#pragma warning disable CS0618
 			_pin.SendTap();
+#pragma warning restore CS0618
+			_pin.SendMarkerClick();
 		}
 
 		void UpdateLocation()

@@ -28,9 +28,7 @@ namespace Xamarin.Forms.Platform.MacOS
 		{
 		}
 
-		IElementController ElementController => Element;
-
-		IPageController PageController => (IPageController)Element;
+		Page Page => (Page)Element;
 
 		public override nint SelectedIndex
 		{
@@ -41,7 +39,7 @@ namespace Xamarin.Forms.Platform.MacOS
 					return;
 				base.SelectedIndex = value;
 				if (Carousel != null)
-					Carousel.CurrentPage = (ContentPage)ElementController.LogicalChildren[(int)SelectedIndex];
+					Carousel.CurrentPage = (ContentPage)Element.LogicalChildren[(int)SelectedIndex];
 			}
 		}
 
@@ -63,7 +61,7 @@ namespace Xamarin.Forms.Platform.MacOS
 
 			Init();
 
-			OnElementChanged(new VisualElementChangedEventArgs(oldElement, element));
+			RaiseElementChanged(new VisualElementChangedEventArgs(oldElement, element));
 		}
 
 		public void SetElementSize(Size size)
@@ -80,7 +78,7 @@ namespace Xamarin.Forms.Platform.MacOS
 				return;
 
 			_appeared = true;
-			PageController.SendAppearing();
+			Page.SendAppearing();
 		}
 
 		public override void ViewDidDisappear()
@@ -91,7 +89,7 @@ namespace Xamarin.Forms.Platform.MacOS
 				return;
 
 			_appeared = false;
-			PageController.SendDisappearing();
+			Page.SendDisappearing();
 		}
 
 		protected override void Dispose(bool disposing)
@@ -100,7 +98,7 @@ namespace Xamarin.Forms.Platform.MacOS
 			{
 				if (Carousel != null)
 				{
-					Carousel.PropertyChanged -= OnPropertyChanged;
+					Carousel.PropertyChanged -= OnElementPropertyChanged;
 					Carousel.PagesChanged -= OnPagesChanged;
 				}
 
@@ -109,7 +107,7 @@ namespace Xamarin.Forms.Platform.MacOS
 				if (_appeared)
 				{
 					_appeared = false;
-					PageController?.SendDisappearing();
+					Page?.SendDisappearing();
 				}
 
 				if (_events != null)
@@ -131,9 +129,14 @@ namespace Xamarin.Forms.Platform.MacOS
 			base.Dispose(disposing);
 		}
 
-		void OnElementChanged(VisualElementChangedEventArgs e)
+		void RaiseElementChanged(VisualElementChangedEventArgs e)
 		{
+			OnElementChanged(e);
 			ElementChanged?.Invoke(this, e);
+		}
+
+		protected virtual void OnElementChanged(VisualElementChangedEventArgs e)
+		{
 		}
 
 		void ConfigureNSPageController()
@@ -156,16 +159,19 @@ namespace Xamarin.Forms.Platform.MacOS
 			UpdateBackground();
 			UpdateSource();
 
-			Carousel.PropertyChanged += OnPropertyChanged;
+			Carousel.PropertyChanged += OnElementPropertyChanged;
 			Carousel.PagesChanged += OnPagesChanged;
 		}
 
 		void UpdateSource()
 		{
+			if (Element.LogicalChildren.Count == 0 && ArrangedObjects.Length == 0)
+				return;
+			
 			var pages = new List<NSPageContainer>();
-			for (var i = 0; i < ElementController.LogicalChildren.Count; i++)
+			for (var i = 0; i < Element.LogicalChildren.Count; i++)
 			{
-				Element element = ElementController.LogicalChildren[i];
+				Element element = Element.LogicalChildren[i];
 				var child = element as ContentPage;
 				if (child != null)
 					pages.Add(new NSPageContainer(child, i));
@@ -180,13 +186,13 @@ namespace Xamarin.Forms.Platform.MacOS
 			UpdateSource();
 		}
 
-		void OnPropertyChanged(object sender, PropertyChangedEventArgs e)
+		protected virtual void OnElementPropertyChanged(object sender, PropertyChangedEventArgs e)
 		{
 			if (e.PropertyName == nameof(TabbedPage.CurrentPage))
 				UpdateCurrentPage();
 			else if (e.PropertyName == VisualElement.BackgroundColorProperty.PropertyName)
 				UpdateBackground();
-			else if (e.PropertyName == Page.BackgroundImageProperty.PropertyName)
+			else if (e.PropertyName == Page.BackgroundImageSourceProperty.PropertyName)
 				UpdateBackground();
 		}
 
@@ -195,16 +201,18 @@ namespace Xamarin.Forms.Platform.MacOS
 			if (View.Layer == null)
 				return;
 
-			string bgImage = ((Page)Element).BackgroundImage;
-
-			if (!string.IsNullOrEmpty(bgImage))
+			this.ApplyNativeImageAsync(Page.BackgroundImageSourceProperty, image =>
 			{
-				View.Layer.BackgroundColor = NSColor.FromPatternImage(NSImage.ImageNamed(bgImage)).CGColor;
-				return;
-			}
-
-			Color bgColor = Element.BackgroundColor;
-			View.Layer.BackgroundColor = bgColor.IsDefault ? NSColor.White.CGColor : bgColor.ToCGColor();
+				if (image != null)
+				{
+					View.Layer.BackgroundColor = NSColor.FromPatternImage(image).CGColor;
+				}
+				else
+				{
+					Color bgColor = Element.BackgroundColor;
+					View.Layer.BackgroundColor = bgColor.IsDefault ? NSColor.White.CGColor : bgColor.ToCGColor();
+				}
+			});
 		}
 
 		void UpdateCurrentPage(bool animated = true)

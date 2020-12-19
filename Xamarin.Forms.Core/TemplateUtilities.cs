@@ -58,9 +58,9 @@ namespace Xamarin.Forms
 			var newElement = (Element)newValue;
 			if (self.ControlTemplate == null)
 			{
-				for (var i = 0; i < self.InternalChildren.Count; i++)
+				while (self.InternalChildren.Count > 0)
 				{
-					self.InternalChildren.Remove(self.InternalChildren[i]);
+					self.InternalChildren.RemoveAt(self.InternalChildren.Count - 1);
 				}
 
 				if (newValue != null)
@@ -104,9 +104,9 @@ namespace Xamarin.Forms
 			}
 
 			// Now remove all remnants of any other children just to be sure
-			for (var i = 0; i < self.InternalChildren.Count; i++)
+			while (self.InternalChildren.Count > 0)
 			{
-				self.InternalChildren.Remove(self.InternalChildren[i]);
+				self.InternalChildren.RemoveAt(self.InternalChildren.Count - 1);
 			}
 
 			ControlTemplate template = self.ControlTemplate;
@@ -123,7 +123,22 @@ namespace Xamarin.Forms
 				}
 
 				self.InternalChildren.Add(content);
+				var controlTemplated = (IControlTemplated)bindable;
+				controlTemplated.OnControlTemplateChanged((ControlTemplate)oldValue, (ControlTemplate)newValue);
+				controlTemplated.TemplateRoot = content;
+				controlTemplated.OnApplyTemplate();
 			}
+		}
+
+		public static object GetTemplateChild(this IControlTemplated controlTemplated, string name)
+		{
+			return controlTemplated.TemplateRoot?.FindByName(name);
+		}
+
+		internal static void OnChildRemoved(IControlTemplated controlTemplated, Element removedChild)
+		{
+			if (removedChild == controlTemplated.TemplateRoot)
+				controlTemplated.TemplateRoot = null;
 		}
 	}
 }

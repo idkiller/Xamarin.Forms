@@ -9,8 +9,9 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>Xamarin.Forms.Core.UITests</RootNamespace>
     <AssemblyName>Xamarin.Forms.Core.Windows.UITests</AssemblyName>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.7</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
+    <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -20,176 +21,51 @@
     <DefineConstants>TRACE;DEBUG;__WINDOWS__;UITEST</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <NoWarn>0114;0108;4014;0649;0169;0168;0219</NoWarn>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE;UITEST</DefineConstants>
+    <DefineConstants>TRACE;__WINDOWS__;UITEST</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <NoWarn>0114;0108;4014;0649;0169;0168;0219</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="nunit.framework, Version=2.6.4.14350, Culture=neutral, PublicKeyToken=96d09a1eb7f44a77, processorArchitecture=MSIL">
-      <HintPath>..\packages\NUnit.2.6.4\lib\nunit.framework.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
     <Reference Include="System" />
+    <Reference Include="System.Configuration" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Drawing" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Data" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Xml" />
-    <Reference Include="Xamarin.UITest, Version=2.0.5.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\Xamarin.UITest.2.0.5\lib\Xamarin.UITest.dll</HintPath>
-      <Private>True</Private>
-    </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\BaseTestFixture.cs">
-      <Link>BaseTestFixture.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Queries.cs">
-      <Link>Queries.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Remotes\BaseViewContainerRemote.cs">
-      <Link>Remotes\BaseViewContainerRemote.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Remotes\EventViewContainerRemote.cs">
-      <Link>Remotes\EventViewContainerRemote.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Remotes\LayeredViewContainerRemote.cs">
-      <Link>Remotes\LayeredViewContainerRemote.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Remotes\RemoteFactory.cs">
-      <Link>Remotes\RemoteFactory.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Remotes\StateViewContainerRemote.cs">
-      <Link>Remotes\StateViewContainerRemote.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Remotes\ViewContainerRemote.cs">
-      <Link>Remotes\ViewContainerRemote.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\ActionSheetUITests.cs">
-      <Link>Tests\ActionSheetUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\ActivityIndicatorUITests.cs">
-      <Link>Tests\ActivityIndicatorUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\AutomationIDUITests.cs">
-      <Link>Tests\AutomationIDUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\BoxViewUITests.cs">
-      <Link>Tests\BoxViewUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\ButtonUITests.cs">
-      <Link>Tests\ButtonUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\ContextActionsUITests.cs">
-      <Link>Tests\ContextActionsUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\DatePickerUITests.cs">
-      <Link>Tests\DatePickerUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\DisplayAlertUITests.cs">
-      <Link>Tests\DisplayAlertUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\EditorUITests.cs">
-      <Link>Tests\EditorUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\EntryUITests.cs">
-      <Link>Tests\EntryUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\FrameUITests.cs">
-      <Link>Tests\FrameUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\ImageUITests.cs">
-      <Link>Tests\ImageUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\LabelUITests.cs">
-      <Link>Tests\LabelUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\Legacy-CellsUITests.cs">
-      <Link>Tests\Legacy-CellsUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\Legacy-UnevenListTests.cs">
-      <Link>Tests\Legacy-UnevenListTests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\PickerUITests.cs">
-      <Link>Tests\PickerUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\ProgressBarUITests.cs">
-      <Link>Tests\ProgressBarUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\RootGalleryUITests.cs">
-      <Link>Tests\RootGalleryUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\ScrollViewUITests.cs">
-      <Link>Tests\ScrollViewUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\SearchBarUITests.cs">
-      <Link>Tests\SearchBarUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\SliderUITests.cs">
-      <Link>Tests\SliderUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\StepperUITests.cs">
-      <Link>Tests\StepperUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\SwitchUITests.cs">
-      <Link>Tests\SwitchUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\TimePickerUITests.cs">
-      <Link>Tests\TimePickerUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\ToolbarItemTests.cs">
-      <Link>Tests\ToolbarItemTests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\ViewUITests.cs">
-      <Link>Tests\ViewUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Tests\WebViewUITests.cs">
-      <Link>Tests\WebViewUITests.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\UITestCategories.cs">
-      <Link>UITestCategories.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Utilities\AppExtensions.cs">
-      <Link>Utilities\AppExtensions.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Utilities\Drag.cs">
-      <Link>Utilities\Drag.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Utilities\Gestures.cs">
-      <Link>Utilities\Gestures.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Utilities\Logger.cs">
-      <Link>Utilities\Logger.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Utilities\NumericExtensions.cs">
-      <Link>Utilities\NumericExtensions.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Utilities\ParsingUtils.cs">
-      <Link>Utilities\ParsingUtils.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Utilities\UITestCustomExceptions.cs">
-      <Link>Utilities\UITestCustomExceptions.cs</Link>
-    </Compile>
-    <Compile Include="..\Xamarin.Forms.Core.iOS.UITests\Utilities\ViewInspector.cs">
-      <Link>Utilities\ViewInspector.cs</Link>
-    </Compile>
-    <Compile Include="App.cs" />
-    <Compile Include="PlatformQueries.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
+    <PackageReference Include="Appium.WebDriver" Version="4.0.0.4-beta" />
+    <PackageReference Include="Castle.Core" Version="4.3.1" />
+    <PackageReference Include="DotNetSeleniumExtras.PageObjects" Version="3.11.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="12.0.3" />
+    <PackageReference Include="NUnit" Version="3.12.0" />
+    <PackageReference Include="Selenium.Support" Version="3.14.0" />
+    <PackageReference Include="Selenium.WebDriver" Version="3.14.0" />
+    <PackageReference Include="Xam.Plugin.DeviceInfo" Version="3.0.2" />
+    <PackageReference Include="Xamarin.UITest" Version="3.0.7" />
+    <PackageReference Include="NUnit3TestAdapter">
+      <Version>3.15.1</Version>
+    </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <None Include="packages.config" />
+    <Compile Include="WindowsTestBase.cs" />
+    <Compile Include="WindowsTestServer.cs" />
+    <Compile Include="WinDriverApp.cs" />
+    <Compile Include="WinQuery.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="app.config" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Xamarin.Forms.Core\Xamarin.Forms.Core.csproj">
@@ -205,7 +81,7 @@
       <Name>Xamarin.Forms.Maps</Name>
     </ProjectReference>
     <ProjectReference Include="..\Xamarin.Forms.Platform\Xamarin.Forms.Platform.csproj">
-      <Project>{67f9d3a8-f71e-4428-913f-c37ae82cdb24}</Project>
+      <Project>{D31A6537-ED9C-4EBD-B231-A8D4FE44126A}</Project>
       <Name>Xamarin.Forms.Platform</Name>
     </ProjectReference>
   </ItemGroup>
@@ -213,12 +89,12 @@
     <Service Include="{82A7F48D-3B50-4B1E-B82E-3ADA8210C358}" />
   </ItemGroup>
   <Import Project="..\Xamarin.Forms.Controls.Issues\Xamarin.Forms.Controls.Issues.Shared\Xamarin.Forms.Controls.Issues.Shared.projitems" Label="Shared" />
+  <Import Project="..\Xamarin.Forms.Core.UITests.Shared\Xamarin.Forms.Core.UITests.projitems" Label="Shared" />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
-       Other similar extension points exist, see Microsoft.Common.targets.
-  <Target Name="BeforeBuild">
+  <Target Name="_CopyXamarinUITestFiles" AfterTargets="Build">
+    <ItemGroup>
+      <_XamarinUITestFiles Include="$(NuGetPackageRoot)Xamarin.UITest\%(Version)\**" Condition="@(PackageReference -> '%(Identity)') == 'Xamarin.UITest'" InProject="False" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_XamarinUITestFiles)" DestinationFolder="$(SolutionDir)packages\Xamarin.UITest.AnyVersion\%(RecursiveDir)" ContinueOnError="true" Retries="0" />
   </Target>
-  <Target Name="AfterBuild">
-  </Target>
-  -->
 </Project>
